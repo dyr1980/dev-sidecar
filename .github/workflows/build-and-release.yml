@@ -120,9 +120,9 @@ jobs:
           dir || ls -lah;
 
           echo "======================================================================";
-          echo "pnpm install";
+          echo "pnpm install --shamefully-hoist";
           echo "--------------------";
-          pnpm install;
+          pnpm install --shamefully-hoist;
 
       # - name: "test packages/core"
       #   run: |
