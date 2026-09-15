@@ -77,6 +77,7 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
+    executableName: 'dev-sidecar', // <--- 关键修改：新增这一行，解决 AppImage 路径非法字符报错
     target: isCI
       ? [
           { target: 'deb', arch: ['x64', 'arm64', 'armv7l'] },
