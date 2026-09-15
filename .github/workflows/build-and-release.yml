@@ -140,6 +140,11 @@ jobs:
           }
           "
 
+      # 新增：安装 Linux 打包 pacman 包所需的 bsdtar 工具
+      - name: "Install bsdtar for Linux pacman package"
+        if: ${{ matrix.os == 'ubuntu' }}
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
       - name: "npm run electron:build (Windows/macOS)"
         if: ${{ matrix.os != 'ubuntu' }}
         env:
