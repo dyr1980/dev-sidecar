@@ -105,12 +105,12 @@ jobs:
           pnpm install --no-frozen-lockfile --shamefully-hoist;
           
           echo "======================================================================";
-          echo "强制补装 cross-spawn，防止 electron-builder 依赖树扫描失败";
+          echo "再次在 packages/gui 中强制安装依赖";
           echo "--------------------";
-          # 注意：pnpm add 不需要也不支持 --no-frozen-lockfile 参数！
-          pnpm add -D cross-spawn -w;
+          cd packages/gui;
+          pnpm install --no-frozen-lockfile --shamefully-hoist;
 
-      # 这里彻底删除了 test packages/core 和 test packages/mitmproxy
+      # 彻底删除了 test packages/core 和 test packages/mitmproxy
 
       - name: "Cache Flatpak runtime (Linux)"
         if: ${{ matrix.os == 'ubuntu' }}
