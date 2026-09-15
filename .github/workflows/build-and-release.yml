@@ -24,6 +24,8 @@ jobs:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       VUE_APP_PUBLISH_PROVIDER: generic
+      # 修复：通过环境变量设置 node-linker，避免 pnpm config set 报错
+      NPM_CONFIG_NODE_LINKER: "hoisted"
     strategy:
       fail-fast: false
       matrix:
@@ -81,13 +83,13 @@ jobs:
           echo "CFLAGS=-std=c11" >> $GITHUB_ENV
 
       - name: "Force clean node_modules"
+        # 修复：使用 Node.js 脚本替代 rm -rf，Windows PowerShell 完美兼容
         run: |
-          rm -rf node_modules packages/*/node_modules || true
+          node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
       - name: "'pnpm install' with hoisted linker"
         run: |
           echo "强制使用扁平化 node_modules 结构 (npm 风格)";
-          pnpm config set node-linker hoisted;
           pnpm install --no-frozen-lockfile;
 
       - name: "npm run electron:build (Windows/macOS)"
