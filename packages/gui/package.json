@@ -10,7 +10,7 @@
   },
   "description": "开发者边车辅助工具 — 加速 GitHub/NPM/Docker Hub 等站点的本地 MITM 代理",
   "license": "MPL-2.0",
-  "homepage": "https://github.com/docmirror/dev-sidecar",
+  "homepage": "https://github.com/dyr1980/dev-sidecar",
   "scripts": {
     "serve": "pnpm exec vue-cli-service serve",
     "build": "pnpm exec vue-cli-service build",
@@ -58,6 +58,16 @@
     "json5-loader": "^4.0.1",
     "path-browserify": "^1.0.1",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "dyr1980",
+        "repo": "dev-sidecar",
+        "releaseType": "release"
+      }
+    ]
   },
   "browserslist": [
     "> 1%",
