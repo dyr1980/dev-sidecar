@@ -64,7 +64,7 @@ module.exports = {
   },
   win: {
     icon: 'build/icons/',
-    signAndEditExecutable: false, // 已修改：强制在CI和本地均跳过签名，解决无证书导致构建失败的问题
+    signAndEditExecutable: false, // 强制在CI和本地均跳过签名，解决无证书导致构建失败的问题
     target: isCI
       ? [
           { target: 'nsis', arch: ['x64'] },
@@ -77,16 +77,15 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
-    executableName: 'dev-sidecar', // <--- 关键修改：新增这一行，解决 AppImage 路径非法字符报错
+    executableName: 'dev-sidecar', // 解决 AppImage 路径非法字符报错
     target: isCI
       ? [
           { target: 'deb', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'AppImage', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'tar.gz', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
-          { target: 'flatpak', arch: ['x64'] },
+          // { target: 'flatpak', arch: ['x64'] }, // <--- 已修改：删掉了这行！避免 CI 环境找不到 flatpak 命令导致报错
           // Arch Linux (fpm/pacman), 产物为 .pkg.tar.xz, 可直接 pacman -U 安装
-          // 已修改：删除非法的 artifactName 属性，避免 v26.8.1 报错
           {
             target: 'pacman',
             arch: ['x64', 'arm64'],
@@ -101,7 +100,7 @@ module.exports = {
   },
   mac: {
     icon: './build/mac/icon.icns',
-    identity: null, // 已修改：强制跳过 macOS 签名，避免无证书报错
+    identity: null, // 强制跳过 macOS 签名，避免无证书报错
     target: isCI
       ? [
           { target: 'dmg', arch: ['x64', 'arm64'] },
