@@ -124,15 +124,8 @@ jobs:
           echo "--------------------";
           pnpm install --shamefully-hoist;
 
-      # - name: "test packages/core"
-      #   run: |
-      #     cd packages/core;
-      #     pnpm run test;
-
-      # - name: "test packages/mitmproxy"
-      #   run: |
-      #     cd packages/mitmproxy;
-      #     pnpm run test;
+      # 注意：已删除 test packages/core 和 test packages/mitmproxy，避免 CI 文件锁冲突导致中断
+      # 如果你希望保留测试，请在本地测试通过后再手动添加
 
       - name: "Cache Flatpak runtime (Linux)"
         if: ${{ matrix.os == 'ubuntu' }}
