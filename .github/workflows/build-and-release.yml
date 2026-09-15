@@ -100,15 +100,14 @@ jobs:
           dir || ls -lah;
 
           echo "======================================================================";
-          echo "pnpm install --no-frozen-lockfile --shamefully-hoist";
+          echo "设置 node-linker=hoisted 强制扁平化依赖，解决 electron-builder 扫描失败问题";
           echo "--------------------";
-          pnpm install --no-frozen-lockfile --shamefully-hoist;
+          pnpm config set node-linker hoisted;
           
           echo "======================================================================";
-          echo "再次在 packages/gui 中强制安装依赖";
+          echo "pnpm install";
           echo "--------------------";
-          cd packages/gui;
-          pnpm install --no-frozen-lockfile --shamefully-hoist;
+          pnpm install --no-frozen-lockfile;
 
       # 彻底删除了 test packages/core 和 test packages/mitmproxy
 
