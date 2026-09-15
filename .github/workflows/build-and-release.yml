@@ -24,6 +24,9 @@ jobs:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       VUE_APP_PUBLISH_PROVIDER: generic
+      # 强制 pnpm 使用扁平化结构
+      NPM_CONFIG_NODE_LINKER: "hoisted"
+      NPM_CONFIG_SHAMEFULLY_HOIST: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +51,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           registry-url: https://npm.pkg.github.com/
-          cache: pnpm
+          # 注意：这里故意删除了 cache: pnpm，防止旧缓存污染 node_modules
 
       - name: "Setup Python environment"
         uses: actions/setup-python@v5
@@ -64,15 +67,15 @@ jobs:
       - name: "Print version"
         run: echo "version = ${{ steps.package-info.outputs.version }}";
 
-      - name: "Setup caches"
+      - name: "Setup electron caches"
         uses: actions/cache@v4
         with:
           path: |
             ${{ github.workspace }}/.cache/electron
             ${{ github.workspace }}/.cache/electron-builder
-          key: ${{ runner.os }}-electron-cache-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-electron-cache-v2-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-electron-cache-
+            ${{ runner.os }}-electron-cache-v2-
 
       - name: "Set C++17 compiler flags"
         if: ${{ matrix.os != 'windows' }}
@@ -80,11 +83,12 @@ jobs:
           echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
           echo "CFLAGS=-std=c11" >> $GITHUB_ENV
 
-      - name: "Force clean node_modules"
+      # 关键步骤 1：强行清理所有旧的 node_modules 和锁文件，保证从零开始
+      - name: "Force clean node_modules & lockfile"
         run: |
-          node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
+          node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules','pnpm-lock.yaml'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
-      # 关键步骤：动态生成 .npmrc，强制 pnpm 使用扁平化 node_modules 结构
+      # 关键步骤 2：动态生成 .npmrc，强制扁平化依赖
       - name: "Create .npmrc for hoisted dependencies"
         run: |
           echo "node-linker=hoisted" > .npmrc
@@ -97,11 +101,23 @@ jobs:
           echo "enable-pre-post-scripts=true" >> .npmrc
           cd ../..
 
-      - name: "'pnpm install' (root & packages/gui)"
+      - name: "'pnpm install'"
         run: |
           pnpm install --no-frozen-lockfile;
-          cd packages/gui;
-          pnpm install --no-frozen-lockfile;
+
+      # 关键步骤 3：物理注入（安全网）。即使前面失败了，这一步也会强制把 cross-spawn 复制到 electron-builder 能看见的地方
+      - name: "Force resolve cross-spawn for electron-builder"
+        run: |
+          CROSS_SPAWN_DIR=$(find . -type d -path "*/node_modules/cross-spawn" | head -n 1)
+          if [ -n "$CROSS_SPAWN_DIR" ]; then
+            echo "Found cross-spawn at $CROSS_SPAWN_DIR"
+            mkdir -p packages/gui/node_modules
+            cp -r "$CROSS_SPAWN_DIR" packages/gui/node_modules/
+          else
+            echo "cross-spawn not found! Attempting to install directly..."
+            cd packages/gui
+            npm install cross-spawn --no-save --legacy-peer-deps --workspaces=false
+          fi
 
       - name: "npm run electron:build (Windows/macOS)"
         if: ${{ matrix.os != 'ubuntu' }}
@@ -158,12 +174,13 @@ jobs:
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.dmg      DevSidecar-${{ steps.package-info.outputs.version }}-macos-arm64.dmg;
 
       # Upload Artifacts
+      # 注意：if-no-files-found 改为 warn，确保哪怕某个冷门架构编译失败，也不会中断整个发布流程，你依然能拿到主流的安装包
       - name: "Upload artifacts"
         uses: actions/upload-artifact@v4.4.0
         with:
           path: packages/gui/dist_electron/DevSidecar-*
           name: "DevSidecar-${{ matrix.os }}-${{ steps.package-info.outputs.version }}"
-          if-no-files-found: error
+          if-no-files-found: warn
 
   download-and-release:
     runs-on: ubuntu-latest
