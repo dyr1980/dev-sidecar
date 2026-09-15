@@ -64,7 +64,7 @@ module.exports = {
   },
   win: {
     icon: 'build/icons/',
-    signAndEditExecutable: isCI, // 本地开发跳过签名
+    signAndEditExecutable: false, // 已修改：强制在CI和本地均跳过签名，解决无证书导致构建失败的问题
     target: isCI
       ? [
           { target: 'nsis', arch: ['x64'] },
@@ -85,10 +85,10 @@ module.exports = {
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'flatpak', arch: ['x64'] },
           // Arch Linux (fpm/pacman), 产物为 .pkg.tar.xz, 可直接 pacman -U 安装
+          // 已修改：删除非法的 artifactName 属性，避免 v26.8.1 报错
           {
             target: 'pacman',
             arch: ['x64', 'arm64'],
-            artifactName: 'DevSidecar-${version}-${arch}.pkg.tar.xz',
           },
         ]
       : [
@@ -100,6 +100,7 @@ module.exports = {
   },
   mac: {
     icon: './build/mac/icon.icns',
+    identity: null, // 已修改：强制跳过 macOS 签名，避免无证书报错
     target: isCI
       ? [
           { target: 'dmg', arch: ['x64', 'arm64'] },
