@@ -84,16 +84,24 @@ jobs:
         run: |
           node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
-      - name: "'pnpm install'"
+      # 关键步骤：动态生成 .npmrc，强制 pnpm 使用扁平化 node_modules 结构
+      - name: "Create .npmrc for hoisted dependencies"
+        run: |
+          echo "node-linker=hoisted" > .npmrc
+          echo "shamefully-hoist=true" >> .npmrc
+          echo "enable-pre-post-scripts=true" >> .npmrc
+          
+          cd packages/gui
+          echo "node-linker=hoisted" > .npmrc
+          echo "shamefully-hoist=true" >> .npmrc
+          echo "enable-pre-post-scripts=true" >> .npmrc
+          cd ../..
+
+      - name: "'pnpm install' (root & packages/gui)"
         run: |
           pnpm install --no-frozen-lockfile;
-
-      # 核心杀手锏：物理补全依赖，破除 pnpm 软链接导致的扫描失败
-      - name: "物理补全 electron-builder 依赖"
-        run: |
-          cd packages/gui
-          echo "使用 npm 强制物理安装 execa 和 cross-spawn 到 packages/gui 目录"
-          npm install execa cross-spawn --no-save --legacy-peer-deps
+          cd packages/gui;
+          pnpm install --no-frozen-lockfile;
 
       - name: "npm run electron:build (Windows/macOS)"
         if: ${{ matrix.os != 'ubuntu' }}
