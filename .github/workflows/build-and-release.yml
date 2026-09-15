@@ -100,14 +100,14 @@ jobs:
           dir || ls -lah;
 
           echo "======================================================================";
-          echo "pnpm install --shamefully-hoist";
+          echo "pnpm install --no-frozen-lockfile --shamefully-hoist";
           echo "--------------------";
-          pnpm install --shamefully-hoist;
+          pnpm install --no-frozen-lockfile --shamefully-hoist;
           
           echo "======================================================================";
           echo "强制补装 cross-spawn，防止 electron-builder 依赖树扫描失败";
           echo "--------------------";
-          pnpm add -D cross-spawn -w;
+          pnpm add -D cross-spawn -w --no-frozen-lockfile;
 
       # 这里彻底删除了 test packages/core 和 test packages/mitmproxy
 
