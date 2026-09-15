@@ -52,6 +52,7 @@
     "@vue/cli-service": "^5.0.9",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
+    "cross-spawn": "^7.0.3",
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
     "electron-builder-squirrel-windows": "26.8.1",
