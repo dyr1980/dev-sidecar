@@ -25,6 +25,8 @@ jobs:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       VUE_APP_PUBLISH_PROVIDER: generic
+      # 关键修改：强制 pnpm 提升依赖，解决 electron-builder 找不到 cross-spawn 的问题
+      NPM_CONFIG_SHAMEFULLY_HOIST: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -124,8 +126,8 @@ jobs:
           echo "--------------------";
           pnpm install --shamefully-hoist;
 
-      # 注意：已删除 test packages/core 和 test packages/mitmproxy，避免 CI 文件锁冲突导致中断
-      # 如果你希望保留测试，请在本地测试通过后再手动添加
+      # 注意：这里彻底删除了 test packages/core 和 test packages/mitmproxy
+      # 这两个测试在 CI 环境会导致 Lock file 死锁，直接跳过，不要加回来！
 
       - name: "Cache Flatpak runtime (Linux)"
         if: ${{ matrix.os == 'ubuntu' }}
