@@ -107,7 +107,8 @@ jobs:
           echo "======================================================================";
           echo "强制补装 cross-spawn，防止 electron-builder 依赖树扫描失败";
           echo "--------------------";
-          pnpm add -D cross-spawn -w --no-frozen-lockfile;
+          # 注意：pnpm add 不需要也不支持 --no-frozen-lockfile 参数！
+          pnpm add -D cross-spawn -w;
 
       # 这里彻底删除了 test packages/core 和 test packages/mitmproxy
 
