@@ -24,7 +24,6 @@ jobs:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       VUE_APP_PUBLISH_PROVIDER: generic
-      # 强制 pnpm 使用扁平化结构
       NPM_CONFIG_NODE_LINKER: "hoisted"
       NPM_CONFIG_SHAMEFULLY_HOIST: "true"
     strategy:
@@ -51,7 +50,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           registry-url: https://npm.pkg.github.com/
-          # 注意：这里故意删除了 cache: pnpm，防止旧缓存污染 node_modules
 
       - name: "Setup Python environment"
         uses: actions/setup-python@v5
@@ -83,12 +81,10 @@ jobs:
           echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
           echo "CFLAGS=-std=c11" >> $GITHUB_ENV
 
-      # 关键步骤 1：强行清理所有旧的 node_modules 和锁文件，保证从零开始
       - name: "Force clean node_modules & lockfile"
         run: |
           node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules','pnpm-lock.yaml'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
-      # 关键步骤 2：动态生成 .npmrc，强制扁平化依赖
       - name: "Create .npmrc for hoisted dependencies"
         run: |
           echo "node-linker=hoisted" > .npmrc
@@ -105,19 +101,44 @@ jobs:
         run: |
           pnpm install --no-frozen-lockfile;
 
-      # 关键步骤 3：物理注入（安全网）。即使前面失败了，这一步也会强制把 cross-spawn 复制到 electron-builder 能看见的地方
-      - name: "Force resolve cross-spawn for electron-builder"
+      # 关键步骤：改用 Node.js 脚本进行物理复制，解决 Windows 无法识别 Bash 语法的问题
+      - name: "Force resolve cross-spawn for electron-builder (Node.js)"
         run: |
-          CROSS_SPAWN_DIR=$(find . -type d -path "*/node_modules/cross-spawn" | head -n 1)
-          if [ -n "$CROSS_SPAWN_DIR" ]; then
-            echo "Found cross-spawn at $CROSS_SPAWN_DIR"
-            mkdir -p packages/gui/node_modules
-            cp -r "$CROSS_SPAWN_DIR" packages/gui/node_modules/
-          else
-            echo "cross-spawn not found! Attempting to install directly..."
-            cd packages/gui
-            npm install cross-spawn --no-save --legacy-peer-deps --workspaces=false
-          fi
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const { execSync } = require('child_process');
+
+          function findDir(startDir, targetDirName) {
+            try {
+              const files = fs.readdirSync(startDir);
+              if (files.includes(targetDirName)) return path.join(startDir, targetDirName);
+              for (const file of files) {
+                const fullPath = path.join(startDir, file);
+                if (fs.statSync(fullPath).isDirectory() && !fullPath.includes('.pnpm')) {
+                  const found = findDir(fullPath, targetDirName);
+                  if (found) return found;
+                }
+              }
+            } catch (e) {}
+            return null;
+          }
+
+          const target = findDir('.', 'cross-spawn');
+          if (target) {
+            console.log('Found cross-spawn at:', target);
+            fs.mkdirSync('packages/gui/node_modules', { recursive: true });
+            fs.cpSync(target, 'packages/gui/node_modules/cross-spawn', { recursive: true });
+          } else {
+            console.log('cross-spawn not found, forcing npm install...');
+            try {
+              execSync('npm install cross-spawn --no-save --legacy-peer-deps', { cwd: 'packages/gui', stdio: 'inherit' });
+            } catch (e) {
+              console.error('Failed to install cross-spawn', e);
+              process.exit(1);
+            }
+          }
+          "
 
       - name: "npm run electron:build (Windows/macOS)"
         if: ${{ matrix.os != 'ubuntu' }}
@@ -174,7 +195,6 @@ jobs:
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.dmg      DevSidecar-${{ steps.package-info.outputs.version }}-macos-arm64.dmg;
 
       # Upload Artifacts
-      # 注意：if-no-files-found 改为 warn，确保哪怕某个冷门架构编译失败，也不会中断整个发布流程，你依然能拿到主流的安装包
       - name: "Upload artifacts"
         uses: actions/upload-artifact@v4.4.0
         with:
