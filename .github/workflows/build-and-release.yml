@@ -101,7 +101,6 @@ jobs:
         run: |
           pnpm install --no-frozen-lockfile;
 
-      # 关键步骤：改用 Node.js 脚本进行物理复制，解决 Windows 无法识别 Bash 语法的问题
       - name: "Force resolve cross-spawn for electron-builder (Node.js)"
         run: |
           node -e "
@@ -140,7 +139,6 @@ jobs:
           }
           "
 
-      # 新增：安装 Linux 打包 pacman 包所需的 bsdtar 工具
       - name: "Install bsdtar for Linux pacman package"
         if: ${{ matrix.os == 'ubuntu' }}
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
@@ -176,11 +174,14 @@ jobs:
         if: ${{ matrix.os == 'ubuntu' }}
         run: |
           cd packages/gui/dist_electron;
+          # 先尝试用新版的名字重命名，如果没有则回退到旧版名字
           mv DevSidecar-${{ steps.package-info.outputs.version }}-amd64.deb       DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.deb;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.AppImage DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.AppImage;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.tar.gz      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.tar.gz;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.rpm      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.pkg.tar.xz  DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.pkg.tar.xz;
+          # 关键修改：尝试 x86_64 和 x64 两种可能的 pacman 包名
+          mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.pkg.tar.xz DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.pkg.tar.xz 2>/dev/null || mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.pkg.tar.xz DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.pkg.tar.xz;
+          
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.deb       DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.AppImage  DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.tar.gz    DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.tar.gz;
