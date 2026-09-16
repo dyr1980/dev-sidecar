@@ -46,7 +46,6 @@ module.exports = {
     },
     'src/**/*',
     'package.json',
-    // extra/ 在 extraResources 中已复制，此处不需要再打包进 asar
   ],
   extraResources: [
     {
@@ -64,7 +63,7 @@ module.exports = {
   },
   win: {
     icon: 'build/icons/',
-    signAndEditExecutable: false, // 强制在CI和本地均跳过签名，解决无证书导致构建失败的问题
+    signAndEditExecutable: false,
     target: isCI
       ? [
           { target: 'nsis', arch: ['x64'] },
@@ -77,15 +76,13 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
-    executableName: 'dev-sidecar', // 解决 AppImage 路径非法字符报错
+    executableName: 'dev-sidecar',
     target: isCI
       ? [
           { target: 'deb', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'AppImage', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'tar.gz', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
-          // { target: 'flatpak', arch: ['x64'] }, // <--- 已修改：删掉了这行！避免 CI 环境找不到 flatpak 命令导致报错
-          // Arch Linux (fpm/pacman), 产物为 .pkg.tar.xz, 可直接 pacman -U 安装
           {
             target: 'pacman',
             arch: ['x64', 'arm64'],
@@ -100,7 +97,7 @@ module.exports = {
   },
   mac: {
     icon: './build/mac/icon.icns',
-    identity: null, // 强制跳过 macOS 签名，避免无证书报错
+    identity: null,
     target: isCI
       ? [
           { target: 'dmg', arch: ['x64', 'arm64'] },
