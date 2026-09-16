@@ -12,8 +12,10 @@ on:
       - "**/LICENSE"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  # job 1
   build-and-upload:
     runs-on: ${{ matrix.os }}-latest
     env:
@@ -40,13 +42,13 @@ jobs:
       - name: "Setup pnpm"
         uses: pnpm/action-setup@v4
 
-      - name: 'Setup Node.js "${{ matrix.node }}.x" environment'
+      - name: "Setup Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           registry-url: https://npm.pkg.github.com/
 
-      - name: "Setup Python environment, because of electron-builder install-app-deps requires Python setup tools"
+      - name: "Setup Python"
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -57,193 +59,74 @@ jobs:
         with:
           path: ./packages/gui
 
-      - name: "Print"
-        run: |
-          echo "version = ${{ steps.package-info.outputs.version }}";
-
-      - name: "Setup electron cache"
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ELECTRON_CACHE }}
-          key: ${{ runner.os }}-electron-v3-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-electron-v3-
-
-      - name: "Setup electron-builder cache"
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: ${{ runner.os }}-electron-builder-v3-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-electron-builder-v3-
-
-      - name: "Set C++17 compiler flags (Linux / macOS)"
+      - name: "Set C++17 flags"
         if: ${{ matrix.os != 'windows' }}
         run: |
           echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
           echo "CFLAGS=-std=c++17" >> $GITHUB_ENV
 
-      - name: "Set C++17 compiler flags (Windows)"
-        if: ${{ matrix.os == 'windows' }}
-        run: |
-          echo "CL=/std:c++17" >> $env:GITHUB_ENV
-
-      - name: "Force clean node_modules & lockfile"
+      - name: "Clean workspace"
         run: |
           node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules','pnpm-lock.yaml'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
-      - name: "Create .npmrc for hoisted dependencies"
+      - name: "Create .npmrc for hoisted deps"
         run: |
           echo "node-linker=hoisted" > .npmrc
           echo "shamefully-hoist=true" >> .npmrc
-          echo "enable-pre-post-scripts=true" >> .npmrc
-          
           cd packages/gui
           echo "node-linker=hoisted" > .npmrc
           echo "shamefully-hoist=true" >> .npmrc
-          echo "enable-pre-post-scripts=true" >> .npmrc
           cd ../..
 
-      - name: "'pnpm install'"
-        run: |
-          pnpm install --no-frozen-lockfile;
+      - name: "Install dependencies"
+        run: pnpm install --no-frozen-lockfile
 
-      - name: "Install bsdtar for Linux pacman package"
+      - name: "Install bsdtar for Linux pacman"
         if: ${{ matrix.os == 'ubuntu' }}
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
 
-      # 关键步骤：物理注入 cross-spawn，彻底解决 Linux 扫描失败问题
-      - name: "Force resolve cross-spawn for electron-builder (Node.js)"
+      - name: "Force resolve cross-spawn"
         run: |
           node -e "
-          const fs = require('fs');
-          const path = require('path');
-          const { execSync } = require('child_process');
-
-          function findDir(startDir, targetDirName) {
-            try {
-              const files = fs.readdirSync(startDir);
-              if (files.includes(targetDirName)) return path.join(startDir, targetDirName);
-              for (const file of files) {
-                const fullPath = path.join(startDir, file);
-                if (fs.statSync(fullPath).isDirectory() && !fullPath.includes('.pnpm')) {
-                  const found = findDir(fullPath, targetDirName);
-                  if (found) return found;
-                }
-              }
-            } catch (e) {}
-            return null;
-          }
-
-          const target = findDir('.', 'cross-spawn');
-          if (target) {
-            console.log('Found cross-spawn at:', target);
-            fs.mkdirSync('packages/gui/node_modules', { recursive: true });
-            fs.cpSync(target, 'packages/gui/node_modules/cross-spawn', { recursive: true });
-          } else {
-            console.log('cross-spawn not found, forcing npm install...');
-            try {
-              execSync('npm install cross-spawn --no-save --legacy-peer-deps', { cwd: 'packages/gui', stdio: 'inherit' });
-            } catch (e) {
-              console.error('Failed to install cross-spawn', e);
-              process.exit(1);
-            }
-          }
+          const fs=require('fs'),path=require('path'),{execSync}=require('child_process');
+          function find(d,t){try{let f=fs.readdirSync(d);if(f.includes(t))return path.join(d,t);for(let x of f){let p=path.join(d,x);if(fs.statSync(p).isDirectory()&&!p.includes('.pnpm')){let r=find(p,t);if(r)return r}}}catch(e){}return null}
+          let t=find('.','cross-spawn');
+          if(t){console.log('Found:',t);fs.mkdirSync('packages/gui/node_modules',{recursive:true});fs.cpSync(t,'packages/gui/node_modules/cross-spawn',{recursive:true})}
+          else{execSync('npm install cross-spawn --no-save --legacy-peer-deps',{cwd:'packages/gui',stdio:'inherit'})}
           "
 
-      # ==============================================
-      # ✅ 新增：为 Windows 配置多架构构建
-      # ==============================================
-      - name: "Configure Windows multi-arch build"
-        if: ${{ matrix.os == 'windows' }}
-        shell: powershell
+      - name: "Build (Windows/macOS)"
+        if: ${{ matrix.os != 'ubuntu' }}
+        env:
+          VUE_APP_PUBLISH_URL: https://github.com/dyr1980/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
         run: |
           cd packages/gui
-          New-Item -Path . -Name "electron-builder.temp.yml" -ItemType "file" -Value @"
-          win:
-            target: nsis
-            arch:
-              - x64
-              - ia32
-              - arm64
-          "@
+          npm run electron:build
 
-      - name: "npm run electron:build"
-        shell: pwsh
+      - name: "Build (Linux)"
+        if: ${{ matrix.os == 'ubuntu' }}
+        env:
+          VUE_APP_PUBLISH_URL: https://github.com/dyr1980/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
         run: |
-          echo "cd packages/gui";
-          cd packages/gui;
-          dir || ls -lah;
-          # Windows 强制打包所有架构
-          if ('${{ matrix.os }}' -eq 'windows') {
-            npm run electron:build -- --win --config electron-builder.temp.yml
-          } else {
-            npm run electron:build
-          }
+          cd packages/gui
+          dbus-run-session -- npm run electron:build
 
-      - name: 'Print dir "packages/gui/dist_electron/"'
-        run: |
-          cd packages/gui/dist_electron;
-          dir || ls -lah;
-
-      # ==============================================
-      # ✅ Windows rename artifacts (安全版本)
-      # ==============================================
-      - name: "Rename artifacts - Windows"
-        if: ${{ matrix.os == 'windows' }}
-        shell: powershell
-        run: |
-          cd packages/gui/dist_electron;
-          if (Test-Path "DevSidecar-${{ steps.package-info.outputs.version }}-x64.exe") { ren "DevSidecar-${{ steps.package-info.outputs.version }}-x64.exe" "DevSidecar-${{ steps.package-info.outputs.version }}-windows-x86_64.exe" -ErrorAction SilentlyContinue }
-          if (Test-Path "DevSidecar-${{ steps.package-info.outputs.version }}-ia32.exe") { ren "DevSidecar-${{ steps.package-info.outputs.version }}-ia32.exe" "DevSidecar-${{ steps.package-info.outputs.version }}-windows-ia32.exe" -ErrorAction SilentlyContinue }
-          if (Test-Path "DevSidecar-${{ steps.package-info.outputs.version }}-arm64.exe") { ren "DevSidecar-${{ steps.package-info.outputs.version }}-arm64.exe" "DevSidecar-${{ steps.package-info.outputs.version }}-windows-arm64.exe" -ErrorAction SilentlyContinue }
-          if (Test-Path "DevSidecar-${{ steps.package-info.outputs.version }}.exe") { ren "DevSidecar-${{ steps.package-info.outputs.version }}.exe" "DevSidecar-${{ steps.package-info.outputs.version }}-windows-universal.exe" -ErrorAction SilentlyContinue }
-          dir;
-
-      - name: "Rename artifacts - Linux"
+      - name: "Rename Linux pacman (x86_64 -> x64 fallback)"
         if: ${{ matrix.os == 'ubuntu' }}
         run: |
-          cd packages/gui/dist_electron;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-amd64.deb       DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.deb;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.AppImage DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.AppImage;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.tar.gz      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.tar.gz;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.rpm      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm;
-          
-          # 👇 👇 👇 【核心修复】优先尝试 x86_64 名字，失败则回退到 x64 名字
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.pkg.tar.xz DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.pkg.tar.xz 2>/dev/null || mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.pkg.tar.xz DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.pkg.tar.xz;
-          
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.deb       DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.AppImage  DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.tar.gz    DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.tar.gz;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-aarch64.rpm     DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.rpm;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.deb      DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.deb;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.AppImage DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.AppImage;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.tar.gz   DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.tar.gz;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.rpm      DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.rpm;
-          ls -lah;
-          
-      - name: "Rename artifacts - macOS"
-        if: ${{ matrix.os == 'macos' }}
-        run: |
-          cd packages/gui/dist_electron;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.dmg        DevSidecar-${{ steps.package-info.outputs.version }}-macos-x86_64.dmg;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.dmg      DevSidecar-${{ steps.package-info.outputs.version }}-macos-arm64.dmg;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-universal.dmg  DevSidecar-${{ steps.package-info.outputs.version }}-macos-universal.dmg;
-          ls -lah;
+          cd packages/gui/dist_electron
+          mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.pkg.tar.xz DevSidecar-${{ steps.package-info.outputs.version }}-x64.pkg.tar.xz 2>/dev/null || true
 
-      # 上传所有产物，无论缺失哪些，都继续走下去
-      - name: "Upload ALL files automatically"
-        uses: actions/upload-artifact@v4
+      - name: "Upload all artifacts"
+        uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{ matrix.os }}-build
           path: packages/gui/dist_electron/
           if-no-files-found: warn
 
-  # job 2
   download-and-release:
     runs-on: ubuntu-latest
-    needs:
-      - build-and-upload
+    needs: build-and-upload
     steps:
       - name: "Checkout"
         uses: actions/checkout@v4.1.7
@@ -254,21 +137,20 @@ jobs:
         with:
           path: ./packages/gui
 
-      - name: 'Make "release" dir'
+      - name: "Make release dir"
         run: mkdir release
 
-      - name: "Download ALL artifacts"
+      - name: "Download all artifacts"
         uses: actions/download-artifact@v4
         with:
           path: release/
           merge-multiple: true
 
-      - name: 'Print files from "release" dir'
-        run: |
-          ls -lah release;
+      - name: "Print files"
+        run: ls -lah release
 
-      - name: "Create a draft release"
-        uses: wangliang181231/github-action-ghr@master
+      - name: "Create draft release"
+        uses: wangliang181230/github-action-ghr@master
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GHR_PATH: release/
