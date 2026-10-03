@@ -1,23 +1,28 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import DevSidecar from '@docmirror/dev-sidecar'
-import { app, ipcMain, shell } from 'electron'
+import DevSidecar from '@blue-frontier/dev-sidecar'
+import electron from '../../electron.js'
+const { app, ipcMain, shell } = electron
 import lodash from 'lodash'
-import jsonApi from '@docmirror/mitmproxy/src/json.js'
+import jsonApi from '@blue-frontier/mitmproxy/src/json.js'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const pk = require('../../../package.json')
-import coreDefaultConfig from '@docmirror/dev-sidecar/src/config/index.js'
-import configLoader from '@docmirror/dev-sidecar/src/config/local-config-loader.js'
+import coreDefaultConfig from '@blue-frontier/dev-sidecar/src/config/index.js'
+import configLoader from '@blue-frontier/dev-sidecar/src/config/local-config-loader.js'
 import log from '../../utils/util.log.gui.js'
-import dateUtil from '@docmirror/dev-sidecar/src/utils/util.date.js'
+import dateUtil from '@blue-frontier/dev-sidecar/src/utils/util.date.js'
 
 const { configFromFiles } = coreDefaultConfig
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const mitmproxyPath = path.join(__dirname, '../mitmproxy.js')
-process.env.DS_EXTRA_PATH = path.join(app.getAppPath(), 'extra')
+// extra/ 在打包后位于 resources/extra（extraResources，asar 外）；开发时在项目根 extra/
+// 不能用 getAppPath()：打包后它是 app.asar，exe 在 asar 内无法执行
+process.env.DS_EXTRA_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'extra')
+  : path.join(app.getAppPath(), 'extra')
 let currentWin
 
 const getDefaultConfigBasePath = function () {
@@ -85,6 +90,17 @@ const localApi = {
     },
     getLogDir () {
       return configFromFiles.app.logFileSavePath || path.join(getDefaultConfigBasePath(), '/logs/')
+    },
+    /** 迁移 2.2.0 → 3.0.0（migrations/v3.0.0）：密钥入 SecretStore，删明文 */
+    async securityMigrate () {
+      const migrate = require('@blue-frontier/dev-sidecar/src/utils/util.security-migrate')
+      return migrate.runMigration_to3_0_0()
+    },
+    /** 一键脱敏历史日志 */
+    async redactLogs () {
+      const dir = configFromFiles.app.logFileSavePath || path.join(getDefaultConfigBasePath(), '/logs/')
+      const { redactLogDir } = require('@blue-frontier/dev-sidecar/src/utils/util.redact-logs')
+      return redactLogDir(dir)
     },
     getSystemPlatform (throwIfUnknown = false) {
       return DevSidecar.api.shell.getSystemPlatform(throwIfUnknown)
@@ -175,7 +191,7 @@ const localApi = {
    * @returns {Promise<void>}
    */
   startup () {
-    return DevSidecar.api.startup({ mitmproxyPath })
+    return DevSidecar.api.startup({ mitmproxyPath, setting: localApi.setting.load() })
   },
   server: {
     /**
@@ -183,14 +199,14 @@ const localApi = {
      * @returns {Promise<{port: *}>}
      */
     start () {
-      return DevSidecar.api.server.start({ mitmproxyPath })
+      return DevSidecar.api.server.start({ mitmproxyPath, setting: localApi.setting.load() })
     },
     /**
      * 重启代理服务
      * @returns {Promise<void>}
      */
     restart () {
-      return DevSidecar.api.server.restart({ mitmproxyPath })
+      return DevSidecar.api.server.restart({ mitmproxyPath, setting: localApi.setting.load() })
     },
   },
   shell: {
@@ -244,10 +260,14 @@ function invoke (api, param) {
 }
 
 async function doStart () {
-  // 开启自动下载远程配置
-  await DevSidecar.api.config.startAutoDownloadRemoteConfig()
+  // 远程配置异步下载：有更新时自动 reload 并通知界面，不阻塞四个开关/代理启动
+  DevSidecar.api.config.startAutoDownloadRemoteConfig({
+    onUpdated: () => {
+      emitConfigChanged()
+    },
+  })
   emitConfigChanged()
-  // 启动所有
+  // 启动所有（首页开关无需等待配置下载）
   localApi.startup()
 }
 
@@ -279,6 +299,11 @@ export default {
     DevSidecar.api.event.register('speed', (event) => {
       if (win) {
         win.webContents.send('speed', event)
+      }
+    })
+    DevSidecar.api.event.register('traffic', (event) => {
+      if (win) {
+        win.webContents.send('traffic', event)
       }
     })
 

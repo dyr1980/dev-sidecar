@@ -46,6 +46,7 @@ module.exports = {
     },
     'src/**/*',
     'package.json',
+    // extra/ 在 extraResources 中已复制，此处不需要再打包进 asar
   ],
   extraResources: [
     {
@@ -62,8 +63,10 @@ module.exports = {
     allowToChangeInstallationDirectory: true,
   },
   win: {
-    icon: 'build/icons/',
-    signAndEditExecutable: false,
+    icon: 'build/icons/icon.ico',
+    // 必须为 true 才会用 rcedit 写入 exe 图标和版本信息；
+    // 未配置证书时 electron-builder 会自动跳过签名，不会失败。
+    signAndEditExecutable: true,
     target: isCI
       ? [
           { target: 'nsis', arch: ['x64'] },
@@ -76,17 +79,13 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
-    executableName: 'dev-sidecar',
     target: isCI
       ? [
           { target: 'deb', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'AppImage', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'tar.gz', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
-          {
-            target: 'pacman',
-            arch: ['x64', 'arm64'],
-          },
+          { target: 'flatpak', arch: ['x64'] },
         ]
       : [
           { target: 'deb', arch: [localArch] },
@@ -97,7 +96,6 @@ module.exports = {
   },
   mac: {
     icon: './build/mac/icon.icns',
-    identity: null,
     target: isCI
       ? [
           { target: 'dmg', arch: ['x64', 'arm64'] },

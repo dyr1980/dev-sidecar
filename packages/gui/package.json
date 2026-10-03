@@ -1,6 +1,6 @@
 {
   "name": "@docmirror/dev-sidecar-gui",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "private": false,
   "type": "module",
   "main": "src/background.js",
@@ -10,21 +10,26 @@
   },
   "description": "开发者边车辅助工具 — 加速 GitHub/NPM/Docker Hub 等站点的本地 MITM 代理",
   "license": "MPL-2.0",
-  "homepage": "https://github.com/dyr1980/dev-sidecar",
+  "homepage": "https://github.com/docmirror/dev-sidecar",
   "scripts": {
+    "gen:tray-plugins": "node scripts/gen-tray-plugins.mjs",
     "serve": "pnpm exec vue-cli-service serve",
+    "prebuild": "node scripts/gen-tray-plugins.mjs && node ../../_script/sync-official-config.mjs",
     "build": "pnpm exec vue-cli-service build",
     "lint": "pnpm exec vue-cli-service lint",
+    "preelectron": "node scripts/gen-tray-plugins.mjs",
     "electron": "node ../../_script/electron-dev.mjs",
     "electron:build": "pnpm run build && pnpm exec electron-builder --config electron-builder.config.cjs",
     "postinstall": "node -e \"!process.env.CI && require('child_process').execSync('electron-builder install-app-deps', { stdio:'inherit' })\"",
     "postuninstall": "pnpm exec electron-builder install-app-deps"
   },
   "dependencies": {
-    "@docmirror/dev-sidecar": "workspace:*",
-    "@docmirror/mitmproxy": "workspace:*",
+    "@blue-frontier/dev-sidecar": "workspace:*",
+    "@blue-frontier/mitmproxy": "workspace:*",
     "@starknt/shutdown-handler-napi": "^0.0.3",
+    "@starknt/shutdown-handler-napi-win32-x64-msvc": "^0.0.3",
     "@starknt/sysproxy": "^0.0.3",
+    "@starknt/sysproxy-win32-x64-msvc": "^0.0.3",
     "@vscode/sudo-prompt": "^9.3.2",
     "adm-zip": "^0.5.17",
     "ant-design-vue": "^4.2.6",
@@ -58,16 +63,6 @@
     "json5-loader": "^4.0.1",
     "path-browserify": "^1.0.1",
     "wait-on": "^7.2.0"
-  },
-  "build": {
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "dyr1980",
-        "repo": "dev-sidecar",
-        "releaseType": "release"
-      }
-    ]
   },
   "browserslist": [
     "> 1%",
