@@ -1,5 +1,5 @@
 {
-  "name": "@docmirror/dev-sidecar-cli",
+  "name": "@blue-frontier/dev-sidecar-cli",
   "version": "2.3.0",
   "private": false,
   "description": "给开发者的加速代理工具",
