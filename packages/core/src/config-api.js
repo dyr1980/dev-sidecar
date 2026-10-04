@@ -1,5 +1,5 @@
 const fs = require('node:fs')
-const jsonApi = require('@docmirror/mitmproxy/src/json')
+const jsonApi = require('@blue-frontier/mitmproxy/src/json') // <-- 这里改成了 @blue-frontier
 const lodash = require('lodash')
 const request = require('request')
 const defConfig = require('./config/index.js')
