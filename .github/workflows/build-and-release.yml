@@ -69,6 +69,31 @@ jobs:
         run: |
           node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules','pnpm-lock.yaml'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
+      # ================= 新增：在打包前强制替换子模块里的旧包名 =================
+      - name: "Fix @docmirror references in submodules"
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            function replaceInDir(dir) {
+              fs.readdirSync(dir).forEach(file => {
+                const fullPath = path.join(dir, file);
+                if (fs.statSync(fullPath).isDirectory()) {
+                  if (file !== "node_modules" && !file.startsWith(".")) replaceInDir(fullPath);
+                } else if (/\.(js|ts|vue|json)$/.test(file)) {
+                  let content = fs.readFileSync(fullPath, "utf8");
+                  if (content.includes("@docmirror/")) {
+                    content = content.replace(/@docmirror\//g, "@blue-frontier/");
+                    fs.writeFileSync(fullPath, content);
+                    console.log("Fixed:", fullPath);
+                  }
+                }
+              });
+            }
+            replaceInDir("packages");
+          '
+      # =======================================================================
+
       - name: "Create .npmrc for hoisted deps"
         run: |
           echo "node-linker=hoisted" > .npmrc
@@ -154,6 +179,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GHR_PATH: release/
-          GHR_TITLE: ${{ github.ref_name }}
+          # ================= 修改：修复标签冲突 =================
+          GHR_TITLE: DevSidecar v${{ steps.package-info.outputs.version }}
+          GHR_TAG: v${{ steps.package-info.outputs.version }}
+          # ====================================================
           GHR_REPLACE: true
           GHR_DRAFT: true
