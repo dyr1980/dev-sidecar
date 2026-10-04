@@ -69,7 +69,7 @@ jobs:
         run: |
           node -e "const fs=require('fs'); ['node_modules','packages/gui/node_modules','packages/core/node_modules','packages/mitmproxy/node_modules','pnpm-lock.yaml'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}});"
 
-      # ================= 新增：在打包前强制替换子模块里的旧包名 =================
+      # ================= 打包前强制替换所有旧包名 =================
       - name: "Fix @docmirror references in submodules"
         run: |
           node -e '
@@ -179,9 +179,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GHR_PATH: release/
-          # ================= 修改：修复标签冲突 =================
-          GHR_TITLE: DevSidecar v${{ steps.package-info.outputs.version }}
-          GHR_TAG: v${{ steps.package-info.outputs.version }}
-          # ====================================================
+          # ================= 修改：使用 run_number 彻底杜绝标签冲突！ =================
+          GHR_TITLE: DevSidecar v${{ steps.package-info.outputs.version }} (Build ${{ github.run_number }})
+          GHR_TAG: v${{ steps.package-info.outputs.version }}-build-${{ github.run_number }}
+          # =========================================================================
           GHR_REPLACE: true
           GHR_DRAFT: true
