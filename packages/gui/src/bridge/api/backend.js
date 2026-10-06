@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+// 内核身份（构建期烘焙的提交 SHA），供底栏展示；内核 version 已废弃，不展示
+import { KERNEL_SHA_FULL, KERNEL_SHA_SHORT } from '../../generated/kernel-info.js'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import DevSidecar from '@blue-frontier/dev-sidecar'
@@ -70,6 +72,8 @@ const localApi = {
 
       return {
         version: pk.version,
+        // 内核身份只用提交 SHA（version 已废弃）
+        kernel: { sha: KERNEL_SHA_SHORT, shaFull: KERNEL_SHA_FULL },
         configProfiles: {
           internal,
           sharedRemote: {
@@ -169,6 +173,23 @@ const localApi = {
       const result = DevSidecar.api.config.reload()
       emitConfigChanged()
       return result
+    },
+    /**
+     * 下载远程配置。
+     *
+     * 下载失败是非致命的：本地已缓存的远程配置（或内置配置）仍然可用，代理不受影响。
+     * 因此这里不向上抛异常，而是返回 `{ ok: true, updated }` 或 `{ ok: false, error }`，
+     * 否则界面会弹出通用的「Api invoke error」提示——看起来像功能坏了，实际不影响使用。
+     * @returns {Promise<{ok: boolean, updated?: boolean, error?: string}>}
+     */
+    async downloadRemoteConfig () {
+      try {
+        const updated = await DevSidecar.api.config.downloadRemoteConfig()
+        return { ok: true, updated: updated === true }
+      } catch (e) {
+        log.error('下载远程配置失败（继续使用本地缓存/内置配置）:', e)
+        return { ok: false, error: e && e.message ? e.message : String(e) }
+      }
     },
     update (partConfig) {
       const result = DevSidecar.api.config.update(partConfig)
