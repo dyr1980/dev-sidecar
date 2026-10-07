@@ -55,9 +55,11 @@ jobs:
 
       - name: "Get package info"
         id: package-info
-        uses: luizfelipelaviola/get-package-info@v2
-        with:
-          path: ./packages/gui
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/gui/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
 
       - name: "Print"
         run: |
@@ -227,9 +229,11 @@ jobs:
 
       - name: "Get package info"
         id: package-info
-        uses: luizfelipelaviola/get-package-info@v2
-        with:
-          path: ./packages/gui
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/gui/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
 
       - name: 'Make "release" dir'
         run: mkdir release
@@ -238,6 +242,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: release
+          merge-multiple: true # <--- 关键修复：强制平铺，解决发布时找不到文件的问题
 
       - name: 'Print files from "release" dir'
         run: |
