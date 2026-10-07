@@ -1,6 +1,6 @@
 {
   "name": "@dyr1980/dev-sidecar-gui",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "private": false,
   "type": "module",
   "main": "src/background.js",
