@@ -80,6 +80,7 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
+    executableName: 'dev-sidecar', // <--- 修复：避免使用带 @ 和 / 的 package.json name 作为 Linux 可执行文件名
     target: isCI
       ? [
           { target: 'deb', arch: ['x64', 'arm64', 'armv7l'] },
