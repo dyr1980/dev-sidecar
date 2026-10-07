@@ -7,11 +7,11 @@ const localArch = process.arch === 'ia32' ? 'ia32' : process.arch === 'arm64' ? 
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'dev-sidecar',
+  appId: 'cn.dyr1980.dev-sidecar',
   electronVersion: '41.3.0', // 2.3.1 修复: hoisted 布局下 builder 无法从 node_modules 推断 electron 版本（devDep 用本地脚本 shim），显式钉住
   productName: 'dev-sidecar',
   artifactName: 'DevSidecar-${version}-${arch}.${ext}',
-  copyright: 'Copyright © 2020-' + new Date().getFullYear() + ' Greper, WangLiang, CuteOmega',
+  copyright: 'Copyright © 2020-' + new Date().getFullYear() + ' Greper, WangLiang, CuteOmega; Modified by dyr1980',
   directories: {
     output: 'dist_electron',
     buildResources: 'build',
@@ -92,7 +92,7 @@ module.exports = {
           { target: 'deb', arch: [localArch] },
           { target: 'AppImage', arch: [localArch] },
         ],
-    appId: 'cn.docmirror.DevSidecar',
+    appId: 'cn.dyr1980.DevSidecar',
     category: 'System',
   },
   mac: {
