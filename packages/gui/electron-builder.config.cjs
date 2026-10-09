@@ -80,7 +80,10 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
-    executableName: 'dev-sidecar', // <--- 修复：避免使用带 @ 和 / 的 package.json name 作为 Linux 可执行文件名
+    // 包名 @dyr1980/dev-sidecar-gui 去 scope 后为 dev-sidecar-gui，
+    // electron-builder 26.17+ 的 AppImage 目标会校验 executableName 合法字符，
+    // 故显式指定，保证与原作者产物完全一致
+    executableName: 'dev-sidecar-gui',
     target: isCI
       ? [
           { target: 'deb', arch: ['x64', 'arm64', 'armv7l'] },
