@@ -125,13 +125,13 @@ jobs:
           ls -lah;
 
           echo "======================================================================";
-          echo "清理缓存恢复带来的旧 node_modules 布局（.pnpm / .modules.yaml），强制 pnpm 12 按 --node-linker hoisted 全新构建";
+          echo "清理缓存恢复带来的旧 node_modules 布局（.pnpm / .modules.yaml），强制全新构建";
           echo "--------------------";
           rm -rf node_modules packages/gui/node_modules packages/core/node_modules packages/mitmproxy/node_modules _script/node_modules vendor/ds-core/node_modules vendor/ds-core/core/node_modules vendor/ds-core/mitmproxy/node_modules;
           ls -lah;
 
           echo "======================================================================";
-          echo "pnpm install --node-linker hoisted (pnpm 12 不认 workspace yaml 的 nodeLinker，用 CLI 参数强制 hoisted 实体布局)";
+          echo "pnpm install --node-linker hoisted (强制 hoisted 实体布局)";
           echo "--------------------";
           pnpm install --node-linker hoisted;
 
@@ -204,7 +204,7 @@ jobs:
       - name: "npm run electron:build (Windows/macOS)"
         if: ${{ matrix.os != 'ubuntu' }}
         env:
-          VUE_APP_PUBLISH_URL: https://github.com/docmirror/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
+          VUE_APP_PUBLISH_URL: https://github.com/dyr1980/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
         run: |
           echo "======================================================================";
           echo "cd packages/gui";
@@ -221,7 +221,7 @@ jobs:
         if: ${{ matrix.os == 'ubuntu' || matrix.os == 'ubuntu-24.04-arm' }}
         env:
           DEBUG: "@malept/flatpak-bundler"
-          VUE_APP_PUBLISH_URL: https://github.com/docmirror/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
+          VUE_APP_PUBLISH_URL: https://github.com/dyr1980/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
         run: |
           echo "======================================================================";
           echo "cd packages/gui";
@@ -259,26 +259,20 @@ jobs:
           mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.AppImage DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.AppImage;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-x64.tar.gz      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.tar.gz;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.rpm      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm;
-          # mv DevSidecar-${{ steps.package-info.outputs.version }}-x86_64.flatpak      DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.flatpak;
-          #-------------------------------------------------------------------------------------------------------------------------
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.deb       DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.AppImage  DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.tar.gz    DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.tar.gz;
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-aarch64.rpm      DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.rpm;
-          # arm64 flatpak is on Linux ARM64 runner
-          #-------------------------------------------------------------------------------------------------------------------------
+          mv DevSidecar-${{ steps.package-info.outputs.version }}-aarch64.rpm     DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.rpm;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.deb      DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.deb;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.AppImage DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.AppImage;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.tar.gz   DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.tar.gz;
           mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.rpm      DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.rpm;
-          # armv7l flatpak is on Linux ARM64 runner
           ls -lah;
       - name: "Rename artifacts - Linux ARM64"
         if: ${{ matrix.os == 'ubuntu-24.04-arm' }}
         run: |
           mv DevSidecar-${{ steps.package-info.outputs.version }}-arm64.flatpak      DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.flatpak;
-          #-------------------------------------------------------------------------------------------------------------------------
-          mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.flatpak      DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.flatpak;
+          mv DevSidecar-${{ steps.package-info.outputs.version }}-armv7l.flatpak     DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.flatpak;
           ls -lah;
       - name: "Rename artifacts - macOS"
         if: ${{ matrix.os == 'macos' }}
@@ -341,16 +335,7 @@ jobs:
           path: packages/gui/dist_electron/DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm"
           if-no-files-found: error
-      
-      # - name: "Upload DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.flatpak"
-      #   uses: actions/upload-artifact@v6
-      #   if: ${{ matrix.os == 'ubuntu' }}
-      #   with:
-      #     path: packages/gui/dist_electron/DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.flatpak
-      #     name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.flatpak"
-      #     if-no-files-found: error
 
-      # -------------------------------------------------------------------------------------------------------------------------
       - name: "Upload DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb"
         uses: actions/upload-artifact@v6
         if: ${{ matrix.os == 'ubuntu' }}
@@ -380,7 +365,6 @@ jobs:
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.rpm"
           if-no-files-found: error
 
-      # -------------------------------------------------------------------------------------------------------------------------
       - name: "Upload DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.deb"
         uses: actions/upload-artifact@v6
         if: ${{ matrix.os == 'ubuntu' }}
@@ -419,7 +403,6 @@ jobs:
           path: packages/gui/dist_electron/DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.flatpak
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.flatpak"
           if-no-files-found: error
-      # -------------------------------------------------------------------------------------------------------------------------
       - name: "Upload DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.flatpak"
         uses: actions/upload-artifact@v6
         if: ${{ matrix.os == 'ubuntu-24.04-arm' }}
@@ -566,8 +549,10 @@ jobs:
   # job 2
   download-and-release:
     runs-on: ubuntu-latest
-    # 只在 tag 上发布：branches: release* 那条触发路径不应产出 release（与 CLI 的 build-cli.yml 对齐）
-    if: startsWith(github.ref, 'refs/tags/v')
+    # 手动触发（workflow_dispatch）或推送 v* 标签时都发布正式版；release* 分支推送只构建不发布
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v')
     needs:
       - build-and-upload
     steps:
@@ -620,18 +605,12 @@ jobs:
         with:
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm"
           path: release
-      #- name: "Download DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.flatpak"
-      #  uses: actions/download-artifact@v7
-      #  with:
-      #    name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.flatpak"
-      #    path: release
       # -------------------------------------------------------------------------------------------------------------------------
       - name: "Download DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb"
         uses: actions/download-artifact@v7
         with:
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb"
-          path: release
-      - name: "Download DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage"
+          path: release      - name: "Download DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage"
         uses: actions/download-artifact@v7
         with:
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage"
@@ -771,11 +750,11 @@ jobs:
         run: |
           ls -lah release;
 
-      - name: "Create a draft release"
+      - name: "Create a release"
         uses: wangliang181230/github-action-ghr@master
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GHR_PATH: release/
           GHR_TITLE: ${{ github.ref_name }}
           GHR_REPLACE: true
-          GHR_DRAFT: true
+          GHR_DRAFT: false
