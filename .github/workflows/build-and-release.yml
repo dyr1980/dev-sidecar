@@ -610,7 +610,8 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb"
-          path: release      - name: "Download DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage"
+          path: release
+      - name: "Download DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage"
         uses: actions/download-artifact@v7
         with:
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.AppImage"
