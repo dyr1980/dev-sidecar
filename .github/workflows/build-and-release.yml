@@ -756,6 +756,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GHR_PATH: release/
-          GHR_TITLE: ${{ github.ref_name }}
+          GHR_TITLE: v${{ steps.package-info.outputs.version }}
           GHR_REPLACE: true
           GHR_DRAFT: false
