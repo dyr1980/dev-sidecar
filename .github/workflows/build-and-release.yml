@@ -752,10 +752,14 @@ jobs:
           ls -lah release;
 
       - name: "Create a release"
-        uses: wangliang181230/github-action-ghr@master
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GHR_PATH: release/
-          GHR_TITLE: v${{ steps.package-info.outputs.version }}
-          GHR_REPLACE: true
-          GHR_DRAFT: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 如果同名 Release 已存在，先删除它，避免创建失败
+          gh release delete "v${{ steps.package-info.outputs.version }}" --yes || true
+          # 创建正式 Release
+          gh release create "v${{ steps.package-info.outputs.version }}" \
+            release/* \
+            --title "v${{ steps.package-info.outputs.version }}" \
+            --notes "Release v${{ steps.package-info.outputs.version }}" \
+            --latest
