@@ -103,6 +103,9 @@ export default defineComponent({
       <template v-else-if="systemPlatform === 'linux'">
         1、点击右上角“点此去安装按钮”,将自动安装到系统证书库中<br>
         2、<b color="red">火狐、chrome等浏览器不走系统证书</b>，需要手动安装(下图以chrome为例安装根证书)<br>
+        3、火狐浏览器证书入口：设置 → 隐私与安全 → 连接与软件安全 → 高级设置 → 证书 → 管理证书 → 证书颁发机构 → 导入<br>
+        4、旧版火狐证书入口：设置（或选项） → 隐私与安全 → 证书 → 查看证书<br>
+        5、导入证书后勾选「信任由此证书颁发机构来标识网站」，确定即可<br>
       </template>
       <template v-else>
         1、点击右上角“点此去安装按钮”，打开证书<br>
