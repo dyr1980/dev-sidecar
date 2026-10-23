@@ -25,6 +25,83 @@ function getDomesticDomainAllowListTmpFilePath () {
   return path.join(config.get().server.setting.userBasePath, '/domestic-domain-allowlist.txt')
 }
 
+/**
+ * 生成合并的 CA 包：操作系统证书存储里的根证书 + dev-sidecar 自己的 CA。
+ *
+ * SSL_CERT_FILE / REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE 都是「替换默认信任库」的语义，
+ * 只指向 DS 的 CA 会让所有未被 MITM 的站点（以及不走代理的程序）校验失败。
+ * 使用系统存储而不是 Node 内置列表，避免 Node 版本落后导致根证书过期。
+ */
+async function buildCaBundle (caCertPath) {
+  const bundlePath = path.join(path.dirname(caCertPath), 'ca-bundle.pem')
+  const parts = []
+
+  try {
+    if (process.platform === 'win32') {
+      const script = [
+        '$dis=@{};',
+        'Get-ChildItem Cert:\\LocalMachine\\Disallowed,Cert:\\CurrentUser\\Disallowed -ErrorAction SilentlyContinue | ForEach-Object { $dis[$_.Thumbprint]=1 };',
+        '$c=Get-ChildItem Cert:\\LocalMachine\\Root,Cert:\\CurrentUser\\Root -ErrorAction SilentlyContinue;',
+        'foreach($x in $c){ if($dis.ContainsKey($x.Thumbprint)){continue};',
+        "$b=[Convert]::ToBase64String($x.RawData,'InsertLineBreaks');",
+        "Write-Output '-----BEGIN CERTIFICATE-----'; Write-Output $b; Write-Output '-----END CERTIFICATE-----' }",
+      ].join(' ')
+      const out = await execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        maxBuffer: 20 * 1024 * 1024,
+        windowsHide: true,
+      })
+      if (out && out.includes('BEGIN CERTIFICATE')) {
+        parts.push(out)
+      }
+    } else if (process.platform === 'darwin') {
+      for (const keychain of [
+        '/System/Library/Keychains/SystemRootCertificates.keychain',
+        '/Library/Keychains/System.keychain',
+      ]) {
+        try {
+          const out = await execFile('security', ['find-certificate', '-a', '-p', keychain], { maxBuffer: 20 * 1024 * 1024 })
+          if (out && out.includes('BEGIN CERTIFICATE')) {
+            parts.push(out)
+          }
+        } catch {
+          // 钥匙串不存在或不可读时继续尝试下一个
+        }
+      }
+      if (parts.length === 0) {
+        parts.push(fs.readFileSync('/etc/ssl/cert.pem', 'utf8'))
+      }
+    } else {
+      for (const file of [
+        '/etc/ssl/certs/ca-certificates.crt',
+        '/etc/pki/tls/certs/ca-bundle.crt',
+        '/etc/ssl/cert.pem',
+        '/usr/local/etc/openssl/cert.pem',
+      ]) {
+        if (fs.existsSync(file)) {
+          parts.push(fs.readFileSync(file, 'utf8'))
+          break
+        }
+      }
+    }
+  } catch (e) {
+    log.warn('读取系统根证书失败:', e)
+  }
+
+  if (parts.length === 0) {
+    // 兜底：系统存储读取失败时仍保证信任库可用，避免变量指向空文件
+    try {
+      parts.push(...require('node:tls').rootCertificates)
+      log.warn('未读到系统根证书，临时使用 Node 内置根证书列表')
+    } catch (e) {
+      log.warn('读取 Node 内置根证书失败:', e)
+    }
+  }
+
+  parts.push(fs.readFileSync(caCertPath, 'utf8'))
+  fs.writeFileSync(bundlePath, parts.join('\n'))
+  return bundlePath
+}
+
 // 通过 HKCU\Environment 注册表直接写入/删除环境变量，避免每次 setx 都启动 PowerShell 造成数秒卡顿
 function createEnvRegKey () {
   return new Registry({
@@ -613,13 +690,39 @@ const executor = {
 
           if (setCaBundle) {
             const caCertPath = config.get().server.setting.rootCaFile.certPath
-            log.info(`开启系统代理的同时设置环境变量：REQUEST_CA_BUNDLE = "${caCertPath}"`)
-            envList.push({ key: 'REQUEST_CA_BUNDLE', value: caCertPath })
+            let caBundlePath = caCertPath
+            try {
+              caBundlePath = await buildCaBundle(caCertPath)
+            } catch (e) {
+              log.warn('生成合并 CA 包失败，退回只信任 DS CA:', e)
+            }
+            // REQUESTS_CA_BUNDLE 供 Python requests / httpx 等使用，
+            // SSL_CERT_FILE 供 OpenSSL 系程序（openssl、部分 Python）使用，
+            // CURL_CA_BUNDLE 供 curl 使用；三者都指向「系统根 + DS CA」的合并包
+            log.info(`开启系统代理的同时设置环境变量：REQUESTS_CA_BUNDLE / SSL_CERT_FILE / CURL_CA_BUNDLE = "${caBundlePath}"`)
+            envList.push({ key: 'REQUESTS_CA_BUNDLE', value: caBundlePath })
+            envList.push({ key: 'SSL_CERT_FILE', value: caBundlePath })
+            envList.push({ key: 'CURL_CA_BUNDLE', value: caBundlePath })
           }
 
           await setWindowsEnvVariables(exec, envList)
+
+          // 旧版本把变量名写成了 REQUEST_CA_BUNDLE，升级后要主动清掉；
+          // 仅当值确实是 DS 的证书路径时才删除，避免误删用户自己设置的值。
+          if (setCaBundle) {
+            const caCertPath = config.get().server.setting.rootCaFile.certPath
+            const regKey = createEnvRegKey()
+            const legacyValue = await getWindowsEnvVariable(regKey, 'REQUEST_CA_BUNDLE')
+            if (legacyValue != null && String(legacyValue) === String(caCertPath)) {
+              const existed = await removeWindowsEnvVariable(regKey, 'REQUEST_CA_BUNDLE')
+              if (existed) {
+                delete process.env.REQUEST_CA_BUNDLE
+                await broadcastWindowsEnvChange(exec)
+              }
+            }
+          }
         } catch (e) {
-          log.error('设置环境变量 HTTPS_PROXY、HTTP_PROXY、REQUEST_CA_BUNDLE 失败:', e)
+          log.error('设置环境变量 HTTPS_PROXY、HTTP_PROXY、REQUESTS_CA_BUNDLE、SSL_CERT_FILE 失败:', e)
         }
       }
 
@@ -643,7 +746,8 @@ const executor = {
       }
 
       try {
-        const defaultKeys = ['HTTPS_PROXY', 'HTTP_PROXY', 'REQUEST_CA_BUNDLE']
+        // 最后一项是历史版本写错的变量名，仅用于清理，避免旧值残留在系统里
+        const defaultKeys = ['HTTPS_PROXY', 'HTTP_PROXY', 'REQUESTS_CA_BUNDLE', 'SSL_CERT_FILE', 'CURL_CA_BUNDLE', 'REQUEST_CA_BUNDLE']
         const backup = restoreProxyEnvBackup()
         // 有备份时只处理备份中的 key，避免误删用户本来就有、但 DS 未写入的变量
         const keys = backup ? Object.keys(backup) : defaultKeys
@@ -663,11 +767,32 @@ const executor = {
             }
           }
         }
+        // 升级场景：旧版本的备份里没有新增的键，但新版本可能已经把 DS 的 CA 路径
+        // 写了进去。只清理值确实是 DS 证书路径的键，避免误删用户自己设置的值。
+        if (backup) {
+          loadConfig()
+          const caCertPath = config.get().server.setting.rootCaFile.certPath
+          const caBundlePath = path.join(path.dirname(caCertPath), 'ca-bundle.pem')
+          const dsCaValues = [String(caCertPath), String(caBundlePath)]
+          for (const key of ['REQUESTS_CA_BUNDLE', 'SSL_CERT_FILE', 'CURL_CA_BUNDLE']) {
+            if (keys.includes(key)) {
+              continue
+            }
+            const current = await getWindowsEnvVariable(regKey, key)
+            if (current != null && dsCaValues.includes(String(current))) {
+              const existed = await removeWindowsEnvVariable(regKey, key)
+              if (existed) {
+                delete process.env[key]
+                changed = true
+              }
+            }
+          }
+        }
         if (changed) {
           await broadcastWindowsEnvChange(exec)
         }
       } catch (e) {
-        log.error('恢复/删除环境变量 HTTPS_PROXY、HTTP_PROXY、REQUEST_CA_BUNDLE 失败:', e)
+        log.error('恢复/删除环境变量 HTTPS_PROXY、HTTP_PROXY、REQUESTS_CA_BUNDLE、SSL_CERT_FILE 失败:', e)
       }
 
       return true

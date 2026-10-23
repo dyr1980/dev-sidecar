@@ -16,6 +16,7 @@ import loggerFactory from '@blue-frontier/dev-sidecar/src/utils/util.logger.js'
 import log from '../../utils/util.log.gui.js'
 import dateUtil from '@blue-frontier/dev-sidecar/src/utils/util.date.js'
 import coreConfig from '@blue-frontier/dev-sidecar/src/config/index.js'
+import serviceGroup from '@blue-frontier/dev-sidecar/src/service-group.js'
 
 const { defaultConfig: coreDefaultConfig } = coreConfig
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -67,15 +68,26 @@ const localApi = {
       const remoteConfig = lodash.get(runtimeConfig, 'app.remoteConfig') || {}
 
       const internal = getMetaInfo(coreDefaultConfig, '')
+      const user = getMetaInfo(configLoader.getUserConfig(), '')
       const sharedRemote = getMetaInfo(configLoader.getRemoteConfig(), '')
       const personalRemote = getMetaInfo(configLoader.getRemoteConfig('_personal'), '')
+      const selection = configLoader.getRemoteSelection()
+      const history = configLoader.getRemoteConfigVersions('')
+      const personalHistory = configLoader.getRemoteConfigVersions('_personal')
+      // 选择记录可能指向已被删除的历史快照，这种情况下实际生效的是 live 文件，
+      // 选择器应回落到「最新版本」，而不是显示一个列表里不存在的值。
+      const normalizeSelected = (list, selected) => {
+        return selected && list.some(item => item.version === selected) ? selected : ''
+      }
 
       return {
-        version: pk.version,
+        // 源码运行时由 electron-dev.mjs 注入 `<base>-dev.<指纹>`，仅用于展示
+        version: process.env.DEV_SIDECAR_DISPLAY_VERSION || pk.version,
         // 内核身份只用提交 SHA（version 已废弃）
         kernel: { sha: KERNEL_SHA_SHORT, shaFull: KERNEL_SHA_FULL },
         configProfiles: {
           internal,
+          user,
           sharedRemote: {
             ...sharedRemote,
             url: remoteConfig.url || '',
@@ -86,6 +98,11 @@ const localApi = {
             url: remoteConfig.personalUrl || '',
             enabled: remoteConfig.enabled === true && Boolean(remoteConfig.personalUrl),
           },
+          selectedVersion: normalizeSelected(history, selection.shared),
+          // core 的 setRemoteSelection 用 suffix 作为键：共享是 shared，个人是 _personal。
+          personalSelectedVersion: normalizeSelected(personalHistory, selection._personal),
+          history,
+          personalHistory,
         },
       }
     },
@@ -205,6 +222,110 @@ const localApi = {
       const result = await DevSidecar.api.config.removeUserConfig()
       emitConfigChanged()
       return result
+    },
+  },
+  /**
+   * 服务分组：按配置文件里的 `//` 注释分组，批量启停服务
+   */
+  serviceGroups: {
+    /**
+     * 列出所有服务分组
+     */
+    list () {
+      return serviceGroup.listCatalog(DevSidecar.api.config.get(), {
+        enhancedEnabled: localApi.setting.load().overwall === true,
+      })
+    },
+    /**
+     * 启用/停用服务
+     * @param options 参数
+     * @param options.ids 服务id列表
+     * @param options.enabled 是否启用
+     * @returns {object} { count, catalog }
+     */
+    setEnabled (options) {
+      const { ids, enabled } = options
+      const config = lodash.cloneDeep(DevSidecar.api.config.get())
+      const count = serviceGroup.applyEnabled(config, ids, enabled, {
+        enhancedEnabled: localApi.setting.load().overwall === true,
+      })
+      if (count > 0) {
+        DevSidecar.api.config.save(config)
+        emitConfigChanged()
+      }
+      return {
+        count,
+        catalog: localApi.serviceGroups.list(),
+      }
+    },
+    /**
+     * 修改用户自己添加/修改的配置项的值
+     * @param options 参数
+     * @param options.ids 服务id列表
+     * @param options.section 分区名（如 intercepts、preSetIpList、dnsMapping 等）
+     * @param options.text 配置值的JSON文本
+     * @returns {object} { ok, error, catalog } 修改失败时 ok 为 false，error 为错误信息
+     */
+    setPartValue (options) {
+      const { ids, section, text } = options
+      let value
+      try {
+        value = jsonApi.parse(text)
+      } catch (e) {
+        return { ok: false, error: `配置格式错误：${e.message}` }
+      }
+      if (value === undefined) {
+        return { ok: false, error: '配置值不能为空' }
+      }
+      const config = lodash.cloneDeep(DevSidecar.api.config.get())
+      const count = serviceGroup.setPartValue(config, ids, section, value, {
+        enhancedEnabled: localApi.setting.load().overwall === true,
+      })
+      if (count === 0) {
+        return { ok: false, error: '没有找到可修改的配置项' }
+      }
+      DevSidecar.api.config.save(config)
+      emitConfigChanged()
+      return {
+        ok: true,
+        catalog: localApi.serviceGroups.list(),
+      }
+    },
+    /**
+     * 把用户自己添加/修改的配置项恢复为默认值（内置 + 远程配置），默认配置里不存在时直接删除
+     * @param options 参数
+     * @param options.ids 服务id列表
+     * @param options.sections 需要恢复的分区名列表（不传表示该服务的全部配置项）
+     * @returns {object} { count, catalog } count 为被恢复的配置项数量
+     */
+    resetItems (options) {
+      const { ids, sections } = options
+      const config = lodash.cloneDeep(DevSidecar.api.config.get())
+      const count = serviceGroup.resetParts(config, ids, sections, {
+        enhancedEnabled: localApi.setting.load().overwall === true,
+      })
+      if (count > 0) {
+        DevSidecar.api.config.save(config)
+        emitConfigChanged()
+      }
+      return {
+        count,
+        catalog: localApi.serviceGroups.list(),
+      }
+    },
+    /**
+     * 查找会作用于指定域名的所有服务（匹配规则与代理一致，支持通配符与正则匹配串）
+     * @param {object} options { domain }
+     * @param {string} options.domain 待查找的域名
+     * @returns {object} { domain, ids } ids 为命中的服务 id 列表
+     */
+    matchHostname (options) {
+      const { domain } = options
+      const catalog = localApi.serviceGroups.list()
+      return {
+        domain,
+        ids: serviceGroup.matchCatalog(catalog, domain).map(item => item.id),
+      }
     },
   },
   /**

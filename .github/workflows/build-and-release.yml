@@ -70,6 +70,7 @@ jobs:
       - name: "Print"
         run: |
           echo "version = ${{ steps.package-info.outputs.version }}";
+          echo "github.repository = ${{ github.repository }}";
           echo "github.ref_type = ${{ github.ref_type }}";
           echo "github.ref = ${{ github.ref }}";
           echo "github.ref_name = ${{ github.ref_name }}";
@@ -125,13 +126,13 @@ jobs:
           ls -lah;
 
           echo "======================================================================";
-          echo "清理缓存恢复带来的旧 node_modules 布局（.pnpm / .modules.yaml），强制全新构建";
+          echo "清理缓存恢复带来的旧 node_modules 布局（.pnpm / .modules.yaml），强制 pnpm 12 按 --node-linker hoisted 全新构建";
           echo "--------------------";
           rm -rf node_modules packages/gui/node_modules packages/core/node_modules packages/mitmproxy/node_modules _script/node_modules vendor/ds-core/node_modules vendor/ds-core/core/node_modules vendor/ds-core/mitmproxy/node_modules;
           ls -lah;
 
           echo "======================================================================";
-          echo "pnpm install --node-linker hoisted (强制 hoisted 实体布局)";
+          echo "pnpm install --node-linker hoisted (pnpm 12 不认 workspace yaml 的 nodeLinker，用 CLI 参数强制 hoisted 实体布局)";
           echo "--------------------";
           pnpm install --node-linker hoisted;
 
@@ -158,9 +159,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y flatpak flatpak-builder xdg-desktop-portal appstream fuse3
-          # Allow flatpak-builder's bwrap sandbox to create user namespaces on Ubuntu 24.04
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          # Remove bwrap AppArmor profile if present; it can block sandbox operations beyond userns
           sudo apparmor_parser -R /etc/apparmor.d/bwrap 2>/dev/null || true
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           if [ "${{ steps.cache-flatpak-runtime.outputs.cache-hit }}" != "true" ]; then
@@ -182,9 +181,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y flatpak flatpak-builder xdg-desktop-portal appstream fuse3
-          # Allow flatpak-builder's bwrap sandbox to create user namespaces on Ubuntu 24.04
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          # Remove bwrap AppArmor profile if present; it can block sandbox operations beyond userns
           sudo apparmor_parser -R /etc/apparmor.d/bwrap 2>/dev/null || true
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           if [ "${{ steps.cache-flatpak-runtime-linux-arm64.outputs.cache-hit }}" != "true" ]; then
@@ -201,7 +198,7 @@ jobs:
           echo "--------------------";
           bash _script/linux-arm64-prepare.sh;
 
-      - name: "npm run electron:build (Windows/macOS)"
+      - name: "npm run electron:build:ci (Windows/macOS)"
         if: ${{ matrix.os != 'ubuntu' }}
         env:
           VUE_APP_PUBLISH_URL: https://github.com/dyr1980/dev-sidecar/releases/download/v${{ steps.package-info.outputs.version }}
@@ -213,11 +210,11 @@ jobs:
           dir || ls -lah;
 
           echo "======================================================================";
-          echo "npm run electron:build";
+          echo "npm run electron:build:ci";
           echo "--------------------";
-          npm run electron:build;
+          npm run electron:build:ci;
 
-      - name: "npm run electron:build (Linux & Linux ARM64)"
+      - name: "npm run electron:build:ci (Linux & Linux ARM64)"
         if: ${{ matrix.os == 'ubuntu' || matrix.os == 'ubuntu-24.04-arm' }}
         env:
           DEBUG: "@malept/flatpak-bundler"
@@ -230,9 +227,9 @@ jobs:
           ls -lah;
 
           echo "======================================================================";
-          echo "npm run electron:build";
+          echo "npm run electron:build:ci";
           echo "--------------------";
-          dbus-run-session -- npm run electron:build;
+          dbus-run-session -- npm run electron:build:ci;
 
       - name: 'Print dir "packages/gui/dist_electron/"'
         run: |
@@ -335,7 +332,7 @@ jobs:
           path: packages/gui/dist_electron/DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-x86_64.rpm"
           if-no-files-found: error
-
+      # -------------------------------------------------------------------------------------------------------------------------
       - name: "Upload DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.deb"
         uses: actions/upload-artifact@v6
         if: ${{ matrix.os == 'ubuntu' }}
@@ -364,7 +361,7 @@ jobs:
           path: packages/gui/dist_electron/DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.rpm
           name: "DevSidecar-${{ steps.package-info.outputs.version }}-linux-arm64.rpm"
           if-no-files-found: error
-
+      # -------------------------------------------------------------------------------------------------------------------------
       - name: "Upload DevSidecar-${{ steps.package-info.outputs.version }}-linux-armv7l.deb"
         uses: actions/upload-artifact@v6
         if: ${{ matrix.os == 'ubuntu' }}
@@ -470,6 +467,20 @@ jobs:
         with:
           path: packages/gui/dist_electron/update-linux-x64-${{ steps.package-info.outputs.version }}.zip
           name: "update-linux-x64-${{ steps.package-info.outputs.version }}.zip"
+          if-no-files-found: error
+      - name: "Upload update ZIP (Linux arm64)"
+        uses: actions/upload-artifact@v6
+        if: ${{ matrix.os == 'ubuntu' }}
+        with:
+          path: packages/gui/dist_electron/update-linux-arm64-${{ steps.package-info.outputs.version }}.zip
+          name: "update-linux-arm64-${{ steps.package-info.outputs.version }}.zip"
+          if-no-files-found: error
+      - name: "Upload update ZIP (Linux armv7l)"
+        uses: actions/upload-artifact@v6
+        if: ${{ matrix.os == 'ubuntu' }}
+        with:
+          path: packages/gui/dist_electron/update-linux-armv7l-${{ steps.package-info.outputs.version }}.zip
+          name: "update-linux-armv7l-${{ steps.package-info.outputs.version }}.zip"
           if-no-files-found: error
       # endregion Upload update ZIPs
 
@@ -689,6 +700,16 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: "update-linux-x64-${{ steps.package-info.outputs.version }}.zip"
+          path: release
+      - name: "Download update ZIP (Linux arm64)"
+        uses: actions/download-artifact@v7
+        with:
+          name: "update-linux-arm64-${{ steps.package-info.outputs.version }}.zip"
+          path: release
+      - name: "Download update ZIP (Linux armv7l)"
+        uses: actions/download-artifact@v7
+        with:
+          name: "update-linux-armv7l-${{ steps.package-info.outputs.version }}.zip"
           path: release
       # endregion Download update ZIPs
 

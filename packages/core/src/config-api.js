@@ -37,6 +37,8 @@ const CONFIG_DOWNLOAD_RETRY_DELAY_MS = 1000
 const PROXY_READY_POLL_MS = 500
 const PROXY_READY_CONNECT_TIMEOUT_MS = 1000
 const configLoader = require('./config/local-config-loader')
+const remoteOverrides = require('./config/remote-overrides')
+const serviceGroup = require('./service-group.js')
 
 let configTarget = lodash.cloneDeep(defConfig)
 
@@ -170,6 +172,26 @@ const configApi = {
       log.info('删除远程配置文件成功:', remoteSavePath)
     }
   },
+  getRemoteConfigVersions (suffix = '') {
+    const layer = suffix === '_personal' ? '_personal' : ''
+    return configLoader.getRemoteConfigVersions(layer)
+  },
+  setRemoteConfigVersion (suffix = '', version = '') {
+    const layer = suffix === '_personal' ? '_personal' : ''
+    if (version != null && version !== '') {
+      const safeVersion = String(version).replace(/[^a-z0-9_.-]/gi, '_')
+      const filePath = path.join(
+        configLoader.getUserBasePath(),
+        `remote_config_history${layer}`,
+        `${safeVersion}.json5`,
+      )
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`远程配置版本不存在: ${version}`)
+      }
+    }
+    configLoader.setRemoteSelection(layer, version)
+    return configApi.reload()
+  },
   readRemoteConfigStr (suffix = '') {
     try {
       const path = configLoader.getRemoteConfigPath(suffix)
@@ -210,7 +232,7 @@ const configApi = {
     // 将差异作为用户配置保存到 config.json 中
     const configPath = configLoader.getUserConfigPath()
     try {
-      fs.writeFileSync(configPath, jsonApi.stringify(diffConfig))
+      fs.writeFileSync(configPath, serviceGroup.preserveComments(configPath, jsonApi.stringify(diffConfig)))
       log.info('保存 config.json 自定义配置文件成功:', configPath)
     } catch (e) {
       log.error('保存 config.json 自定义配置文件失败:', configPath, ', error:', e)
@@ -231,6 +253,12 @@ const configApi = {
    * 读取 config.json 后，合并配置
    */
   reload () {
+    try {
+      remoteOverrides.persist(configLoader, defConfig, serviceGroup.preserveComments)
+    } catch (e) {
+      // 严格读取失败时保留原文件，不让宽松加载的 {} 覆盖损坏配置。
+      log.error('清理远程配置重复用户项失败，保留用户配置文件:', e)
+    }
     const userConfig = configLoader.getUserConfig()
     return configApi.set(userConfig) || {}
   },
@@ -296,7 +324,7 @@ const configApi = {
         return
       }
 
-      fs.writeFileSync(configPath, jsonApi.stringify(userConfig))
+      fs.writeFileSync(configPath, serviceGroup.preserveComments(configPath, jsonApi.stringify(userConfig)))
       log.info('保存 config.json（远程配置地址 HTTPS 改写）成功:', configPath)
     } catch (e) {
       // 持久化失败不影响本次运行：内存中的 configTarget 已是 https 地址
@@ -550,6 +578,18 @@ function saveRemoteConfig (body, remoteConfigUrl, suffix) {
     return false
   }
 
+  const oldShared = configLoader.getLiveRemoteConfig()
+  const oldPersonal = configLoader.getLiveRemoteConfig('_personal')
+  remoteOverrides.prepareForRemoteUpdate({
+    loader: configLoader,
+    defaultConfig: defConfig,
+    oldShared,
+    oldPersonal,
+    newLayer: remoteConfig,
+    suffix,
+    preserveComments: serviceGroup.preserveComments,
+  })
+
   try {
     fs.writeFileSync(remoteSavePath, body)
   } catch (e) {
@@ -557,6 +597,8 @@ function saveRemoteConfig (body, remoteConfigUrl, suffix) {
     throw new Error(`保存远程配置文件失败: ${e.message}`)
   }
   log.info('保存远程配置文件成功:', remoteSavePath)
+  // 每次成功下载都留一份历史快照，供「配置版本」下拉切换
+  configLoader.saveRemoteConfigVersion(body, suffix, String(Date.now()))
   return true
 }
 

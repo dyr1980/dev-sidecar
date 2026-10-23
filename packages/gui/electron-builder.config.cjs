@@ -7,8 +7,8 @@ const localArch = process.arch === 'ia32' ? 'ia32' : process.arch === 'arm64' ? 
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'cn.dyr1980.dev-sidecar',
-  electronVersion: '41.3.0', // 2.3.1 修复: hoisted 布局下 builder 无法从 node_modules 推断 electron 版本（devDep 用本地脚本 shim），显式钉住
+  appId: 'dev-sidecar',
+  electronVersion: '42.11.16', // 恢复原作者版本，保证底层 API 和功能完全一致
   productName: 'dev-sidecar',
   artifactName: 'DevSidecar-${version}-${arch}.${ext}',
   copyright: 'Copyright © 2020-' + new Date().getFullYear() + ' Greper, WangLiang, CuteOmega; Modified by dyr1980',
@@ -62,11 +62,10 @@ module.exports = {
     perMachine: true,
     allowElevation: true,
     allowToChangeInstallationDirectory: true,
+    include: 'installer.nsh', // 恢复原版的安装/卸载交互配置
   },
   win: {
     icon: 'build/icons/icon.ico',
-    // 必须为 true 才会用 rcedit 写入 exe 图标和版本信息；
-    // 未配置证书时 electron-builder 会自动跳过签名，不会失败。
     signAndEditExecutable: true,
     target: isCI
       ? [
@@ -80,9 +79,6 @@ module.exports = {
   },
   linux: {
     icon: 'build/mac/',
-    // 包名 @dyr1980/dev-sidecar-gui 去 scope 后为 dev-sidecar-gui，
-    // electron-builder 26.17+ 的 AppImage 目标会校验 executableName 合法字符，
-    // 故显式指定，保证与原作者产物完全一致
     executableName: 'dev-sidecar-gui',
     target: isCI
       ? [
@@ -90,13 +86,13 @@ module.exports = {
           { target: 'AppImage', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'tar.gz', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
-          { target: 'flatpak', arch: ['x64'] },
+          { target: 'flatpak', arch: ['x64'] }, // 恢复原版 flatpak 产物
         ]
       : [
           { target: 'deb', arch: [localArch] },
           { target: 'AppImage', arch: [localArch] },
         ],
-    appId: 'cn.dyr1980.DevSidecar',
+    appId: 'cn.docmirror.DevSidecar',
     category: 'System',
   },
   mac: {

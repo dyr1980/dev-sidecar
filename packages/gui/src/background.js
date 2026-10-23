@@ -12,6 +12,7 @@ import jsonApi from '@blue-frontier/mitmproxy/src/json.js'
 import log from './utils/util.log.gui.js'
 import { TRAY_PLUGINS, TRAY_ACTIONS } from './generated/tray-plugins.js'
 import { VERSION_3_FEATURE_ENABLED } from './version-3-feature.js'
+import feedback from './bridge/feedback/backend.js'
 
 log.info(`background.js start, platform is ${process.platform}`)
 
@@ -316,6 +317,20 @@ function setTray () {
 
     items.push(
       { type: 'separator' },
+      {
+        label: '反馈问题（打包日志）',
+        click: async () => {
+          try {
+            const ret = await feedback.report({})
+            const tail = ret.uploadUrl
+              ? `日志已自动上传：${ret.uploadUrl}`
+              : `日志包：${ret.zipPath}\n\n请在打开的页面里把该文件拖入输入框上传。`
+            await dialog.showMessageBox({ type: 'info', title: '反馈材料已准备', message: '已打开 GitHub 反馈页面', detail: tail, buttons: ['确定'] })
+          } catch (e) {
+            dialog.showErrorBox('生成反馈材料失败', String(e && e.message ? e.message : e))
+          }
+        },
+      },
       { label: 'DevTools (F12)', click: switchDevTools },
       {
         label: '退出',
@@ -507,6 +522,8 @@ function createWindow (startHideWindow, autoQuitIfError = true) {
         enableRemoteModule: true,
         contextIsolation: false,
         nativeWindowOpen: true, // ADD THIS
+        // 网页诊断页用 <webview> 内嵌目标站点；未开启时 $refs 只是普通元素（没有 loadURL）
+        webviewTag: true,
         // Use pluginOptions.nodeIntegration, leave this alone
         // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
         nodeIntegration: true, // process.env.ELECTRON_NODE_INTEGRATION

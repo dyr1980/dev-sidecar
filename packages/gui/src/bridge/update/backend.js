@@ -16,10 +16,12 @@ const pkg = require('../../../package.json')
 import appPathUtil from '../../utils/util.apppath.js'
 import log from '../../utils/util.log.gui.js'
 import { isNewVersion } from '@blue-frontier/dev-sidecar/src/utils/util.version.js'
+import sudoPrompt from '@vscode/sudo-prompt'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isMac = process.platform === 'darwin'
 const isLinux = process.platform === 'linux'
+const isWindows = process.platform === 'win32'
 
 const curVersion = pkg.version
 const isCurrentPreRelease = curVersion.includes('-')
@@ -55,8 +57,8 @@ function getTrustedCaList () {
 
 /**
  * 获取当前平台/架构对应的资源命名。
- * - partArch: 增量包命名用（win-x64 / win-arm64 / win-ia32）
- * - fullArch: 完整安装包命名用（windows-x86_64 / windows-arm64 / linux-armv7l 等）
+ * - partArch: 增量包命名用（<platform>-<arch>，如 win-x64 / mac-arm64 / linux-armv7l）
+ * - fullArch: 完整安装包命名用（windows-x86_64 / macos-arm64 / linux-armv7l 等）
  */
 function safeHostname (uri) {
   try {
@@ -66,12 +68,55 @@ function safeHostname (uri) {
   }
 }
 
-function updateProxyUrl () {
-  return process.env.HTTPS_PROXY
+function getLocalProxyUrl () {
+  const config = DevSidecar.api.config.get()
+  const server = config.server || {}
+  if (!server.port) {
+    return null
+  }
+  const host = !server.host || server.host === '0.0.0.0' ? '127.0.0.1' : server.host
+  return `http://${host}:${server.port}`
+}
+
+function normalizeProxyUrl (url) {
+  return String(url || '').trim().replace(/\/+$/, '').toLowerCase()
+}
+
+/**
+ * 解析更新请求使用的代理。
+ *
+ * - DS 代理已开启：使用它实际的 host/port，不硬编码端口；
+ * - DS 代理未开启：允许用户自己设置的外部代理（环境变量），否则直接返回错误；
+ * - 环境变量指向的正是 DS 自己的代理地址、但代理未开启时，说明这是残留配置，按“代理未开启”处理；
+ * - 任何情况下都不在代理不可用时尝试直连，避免在受限网络里得到误导性的“检查更新失败”。
+ *
+ * @returns {{ url: string|null, error?: string }}
+ */
+function resolveUpdateProxy () {
+  const serverEnabled = DevSidecar.api.status.get().server?.enabled === true
+  const localUrl = getLocalProxyUrl()
+
+  if (serverEnabled) {
+    if (localUrl) {
+      return { url: localUrl }
+    }
+    return { url: null, error: '代理未开启：未取到代理端口，请先在首页开启加速服务后再检查更新' }
+  }
+
+  const envProxy = process.env.HTTPS_PROXY
     || process.env.https_proxy
     || process.env.HTTP_PROXY
     || process.env.http_proxy
-    || 'http://127.0.0.1:31181'
+  if (envProxy) {
+    // 核心在开启系统代理时会把自己的地址写入环境变量；代理关闭后这些变量可能仍然存在，
+    // 不能把它们当成“用户自己的外部代理”去重试。
+    if (localUrl && normalizeProxyUrl(envProxy) === normalizeProxyUrl(localUrl)) {
+      return { url: null, error: '代理未开启，请先在首页开启加速服务后再检查更新' }
+    }
+    return { url: envProxy }
+  }
+
+  return { url: null, error: '代理未开启，请先在首页开启加速服务后再检查更新' }
 }
 
 function getPlatformAssetInfo () {
@@ -85,8 +130,8 @@ function getPlatformAssetInfo () {
     partArch = 'arm64'
     fullArch = 'arm64'
   } else if (arch === 'arm') {
-    // 无 arm 增量包：不要回退到 x64 增量包，否则可能把不兼容补丁装到 ARM 安装上
-    partArch = null
+    // Linux armv7l：CI 已产出 update-linux-armv7l 增量包
+    partArch = 'armv7l'
     fullArch = 'armv7l'
   } else {
     partArch = 'x64'
@@ -126,6 +171,12 @@ function getUpdateDownloadDir (app) {
 
 function downloadFile (uri, filePath, onProgress, onSuccess, onError) {
   log.info('download url', uri)
+  const proxy = resolveUpdateProxy()
+  if (proxy.error) {
+    log.warn('跳过下载升级包：', proxy.error)
+    onError(new Error(proxy.error))
+    return
+  }
   const tempPath = `${filePath}.download`
   try {
     fs.rmSync(tempPath, { force: true })
@@ -155,7 +206,9 @@ function downloadFile (uri, filePath, onProgress, onSuccess, onError) {
   }
   downloadRequest = request(uri, {
     ca: getTrustedCaList(),
-    proxy: updateProxyUrl(),
+    proxy: proxy.url,
+    // 只限制“等待响应”阶段，下载过程中的进度不会因此被中断
+    timeout: 60000,
   }, (response) => {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       fail(new Error(`下载升级包失败，HTTP status: ${response.statusCode}`))
@@ -224,17 +277,57 @@ function updateHandle (app, api, win, beforeQuit, quit, log) {
   let partPackagePath = null
 
   // 检查更新
-  const releasesApiUrl = 'https://api.github.com/repos/docmirror/dev-sidecar/releases'
+  // 只取最近 10 个版本：全量 releases 有 900KB 左右，列表足够判断最新版，且能显著缩短检查时间
+  const releasesApiUrl = 'https://api.github.com/repos/docmirror/dev-sidecar/releases?per_page=10'
   async function checkForUpdatesFromGitHub () {
-    request(releasesApiUrl, {
+    const proxy = resolveUpdateProxy()
+    if (proxy.error) {
+      log.warn('跳过检查更新：', proxy.error)
+      win.webContents.send('update', { key: 'error', action: 'checkForUpdate', error: proxy.error })
+      return
+    }
+
+    // request 自带的 timeout 只覆盖建连后的 socket 空闲，代理 CONNECT 阶段卡住时不会触发，
+    // 所以这里再加一个看门狗主动 abort，避免界面一直停在“检查更新中”。
+    let timedOut = false
+    let requestHandle
+    const timer = setTimeout(() => {
+      timedOut = true
+      log.warn('检查更新超时（15 秒），已中止请求')
+      try {
+        requestHandle?.abort()
+      } catch {
+        // 已经结束的请求无需处理
+      }
+      win.webContents.send('update', { key: 'error', action: 'checkForUpdate', error: '检查更新超时（15 秒），请检查网络或系统代理后重试' })
+    }, 15000)
+
+    requestHandle = request(releasesApiUrl, {
       headers: { 'User-Agent': `DS/${curVersion}`, 'Server-Name': 'baidu.com' },
       ca: getTrustedCaList(),
-      proxy: updateProxyUrl(),
+      proxy: proxy.url,
+      timeout: 15000,
+      // GitHub 的 releases 响应未压缩时接近 1MB，开 gzip 后约 100KB
+      gzip: true,
     }, (error, response, body) => {
+      if (timedOut) {
+        return
+      }
+      clearTimeout(timer)
       try {
         if (error) {
           log.error('检查更新失败:', error)
-          const errorMsg = `检查更新失败：${error}`
+          const isTimeout = error.code === 'ETIMEDOUT' || /timeout/i.test(String(error.message || ''))
+          const proxyUnavailable = /ECONNREFUSED|tunneling socket could not be established|ECONNRESET/i.test(String(error.message || ''))
+            || error.code === 'ECONNREFUSED'
+          let errorMsg
+          if (proxyUnavailable) {
+            errorMsg = '代理未开启或未就绪，请先在首页开启加速服务后重试'
+          } else if (isTimeout) {
+            errorMsg = '检查更新超时（15 秒），请检查网络或系统代理后重试'
+          } else {
+            errorMsg = `检查更新失败：${error}`
+          }
           win.webContents.send('update', { key: 'error', action: 'checkForUpdate', error: errorMsg })
           return
         }
@@ -261,7 +354,11 @@ function updateHandle (app, api, win, beforeQuit, quit, log) {
             return
           }
 
-          log.debug('github api返回的release数据：', JSON.stringify(data, null, '\t'))
+          // 序列化近 1MB 的 JSON 只为调试日志，非 debug 级别时不做
+          const debugEnabled = typeof log.isLevelEnabled === 'function' ? log.isLevelEnabled('debug') : true
+          if (debugEnabled) {
+            log.debug('github api返回的release数据：', JSON.stringify(data, null, '\t'))
+          }
 
           // 检查更新
           for (let i = 0; i < data.length; i++) {
@@ -343,6 +440,19 @@ function updateHandle (app, api, win, beforeQuit, quit, log) {
             bodyObj = JSON.parse(body)
           } catch {
             bodyObj = null
+          }
+
+          // GitHub 未登录请求按出口 IP 限流（每小时 60 次），命中时直接给出可读提示
+          if (response.statusCode === 403 || response.statusCode === 429) {
+            const limited = bodyObj && typeof bodyObj.message === 'string' && /rate limit/i.test(bodyObj.message)
+            win.webContents.send('update', {
+              key: 'error',
+              action: 'checkForUpdate',
+              error: limited
+                ? '检查更新失败：GitHub API 请求频率超限，请稍后再试'
+                : `检查更新失败：GitHub 拒绝了请求（HTTP ${response.statusCode}）`,
+            })
+            return
           }
 
           let detail = bodyObj && bodyObj.message ? bodyObj.message : ''
@@ -441,6 +551,17 @@ function updateHandle (app, api, win, beforeQuit, quit, log) {
 
     log.info('开始解压缩，安装升级包:', partPackagePath, target)
 
+    if (!canWrite(target)) {
+      if (isWindows) {
+        // Windows 安装在 Program Files 时普通权限写不进 resources，请求 UAC 后由提权进程解压
+        await updatePartElevated(app, partPackagePath, target)
+        return
+      }
+      log.warn('安装目录不可写，改用完整安装包')
+      downloadFull(app, value)
+      return
+    }
+
     try {
       await beforeQuit()
       app.relaunch()
@@ -450,6 +571,54 @@ function updateHandle (app, api, win, beforeQuit, quit, log) {
       log.info('安装完成，重启app')
     } finally {
       app.exit(0)
+    }
+  }
+
+  function canWrite (dir) {
+    try {
+      fs.accessSync(dir, fs.constants.W_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 提权解压增量包：UAC 授权后由 PowerShell 结束当前进程、覆盖 resources、再重启应用。
+   * 用户取消 UAC 时当前进程仍在，发送错误提示，由用户决定稍后重试。
+   */
+  async function updatePartElevated (app, partPackagePath, target) {
+    const scriptPath = path.join(path.dirname(partPackagePath), 'apply-update.ps1')
+    const quote = p => String(p).replaceAll("'", "''")
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      // 连同 mitmproxy 子进程一起结束，避免占用 resources 里的文件
+      `taskkill /PID ${process.pid} /T /F | Out-Null`,
+      'Start-Sleep -Milliseconds 800',
+      `Expand-Archive -LiteralPath '${quote(partPackagePath)}' -DestinationPath '${quote(target)}' -Force`,
+      `Start-Process -FilePath '${quote(app.getPath('exe'))}'`,
+    ].join('\r\n')
+    fs.writeFileSync(scriptPath, script, 'utf8')
+
+    const command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`
+    log.info('安装目录不可写，请求管理员权限解压增量包:', scriptPath)
+    try {
+      await new Promise((resolve, reject) => {
+        sudoPrompt.exec(command, { name: 'dev-sidecar' }, (error) => {
+          if (error) {
+            reject(error)
+          } else {
+            resolve()
+          }
+        })
+      })
+    } catch (e) {
+      log.warn('请求管理员权限失败:', e)
+      sendUpdateMessage({
+        key: 'error',
+        value: e,
+        error: `安装目录需要管理员权限，已取消增量更新：${e.message || e}`,
+      })
     }
   }
 
