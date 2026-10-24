@@ -4,7 +4,6 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import AdmZip from 'adm-zip'
-import request from 'request'
 import electron from '../../electron.js'
 import log from '../../utils/util.log.gui.js'
 
@@ -124,32 +123,10 @@ function createBundle (targetDir) {
   return { zipPath, logCount }
 }
 
-function uploadBundle (zipPath) {
-  return new Promise((resolve) => {
-    const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
-    request.post({
-      url: 'https://0x0.st',
-      formData: { file: fs.createReadStream(zipPath) },
-      proxy: proxy || undefined,
-      timeout: 30000,
-      gzip: true,
-    }, (error, response, body) => {
-      if (error || response == null || response.statusCode !== 200) {
-        log.warn('日志包自动上传失败:', error == null ? `HTTP ${response && response.statusCode}` : error.message)
-        resolve(null)
-        return
-      }
-      const url = String(body).trim()
-      resolve(/^https?:\/\//.test(url) ? url : null)
-    })
-  })
-}
-
-function buildIssueUrl ({ zipPath, uploadUrl, description }) {
+function buildIssueUrl ({ zipPath, description }) {
   const title = `[反馈] ${description && description.trim() ? description.trim() : '问题反馈'}`
-  const attachment = uploadUrl
-    ? `日志与运行参数已自动上传：${uploadUrl}`
-    : `日志压缩包已生成：${zipPath}\n\n请把该文件拖到下面的输入框上传（GitHub 不允许通过链接自动附加文件）。`
+  // 日志压缩包由用户手动拖拽上传：GitHub 不支持通过链接自动附加文件
+  const attachment = `日志压缩包：${zipPath}\n\n请把该文件拖到下面的输入框上传（GitHub 不支持通过链接自动附加文件）。`
   const body = [
     '### Ⅰ. 请说明操作系统及DS的版本号：',
     '',
@@ -178,12 +155,13 @@ function buildIssueUrl ({ zipPath, uploadUrl, description }) {
 }
 
 async function report (options = {}) {
-  const { targetDir, description = '', upload = true } = options
+  const { targetDir, description = '' } = options
   const bundle = createBundle(targetDir)
-  const uploadUrl = upload ? await uploadBundle(bundle.zipPath) : null
-  const issueUrl = buildIssueUrl({ ...bundle, uploadUrl, description })
+  const issueUrl = buildIssueUrl({ ...bundle, description })
+  // 顺手打开压缩包所在目录并选中文件，方便用户直接拖到 issue 页面
+  electron.shell.showItemInFolder(bundle.zipPath)
   await electron.shell.openExternal(issueUrl)
-  return { ...bundle, uploadUrl, issueUrl }
+  return { ...bundle, issueUrl }
 }
 
 const feedbackApi = {
