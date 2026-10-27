@@ -76,15 +76,22 @@ exports.default = async function (context) {
   pruneLocales(resourcesDir, platform)
 
   // 删除 core 包里冗余的 exe（已在 extra/ 中通过 extraResources 提供）
+  // 兼容 @docmirror 与 @blue-frontier 两种包名，避免写死
   const duplicateExes = [
     'EnableLoopback.exe',
     'sysproxy.exe',
   ]
+  const unpackedModules = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules')
   for (const exe of duplicateExes) {
-    const dupPath = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules', '@docmirror', 'dev-sidecar', 'src', 'shell', 'scripts', 'extra-path', exe)
-    if (fs.existsSync(dupPath)) {
-      fs.unlinkSync(dupPath)
-      console.log(`Removed duplicate exe: ${dupPath}`)
+    const candidates = [
+      path.join(unpackedModules, '@docmirror', 'dev-sidecar', 'src', 'shell', 'scripts', 'extra-path', exe),
+      path.join(unpackedModules, '@blue-frontier', 'dev-sidecar', 'src', 'shell', 'scripts', 'extra-path', exe),
+    ]
+    for (const dupPath of candidates) {
+      if (fs.existsSync(dupPath)) {
+        fs.unlinkSync(dupPath)
+        console.log(`Removed duplicate exe: ${dupPath}`)
+      }
     }
   }
 

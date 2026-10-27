@@ -86,7 +86,7 @@ module.exports = {
           { target: 'AppImage', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'tar.gz', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
-          { target: 'flatpak', arch: ['x64'] }, // 恢复原版 flatpak 产物
+          // { target: 'flatpak', arch: ['x64'] }, // 与 workflow 对齐：不产 flatpak（workflow 的 flatpak 上传步骤已注释/为死代码）
         ]
       : [
           { target: 'deb', arch: [localArch] },

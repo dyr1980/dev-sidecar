@@ -33,7 +33,8 @@ function writePartPackages (context) {
     const match = filename.match(/^update-(mac|win|linux)-(x64|ia32|arm64|armv7l)-(.+)\.zip$/)
     if (match) {
       const [, platform] = match
-      const partUpdateUrl = publishConfig.url + filename
+      // 补上斜杠，避免拼成 ".../v2.3.8update-win-x64-2.3.8.zip"
+      const partUpdateUrl = `${publishConfig.url.replace(/\/$/, '')}/${filename}`
       platformParts[platform].push(partUpdateUrl)
     }
   }
@@ -48,7 +49,7 @@ function writePartPackages (context) {
 
     // Write one partPackage line per arch
     const lines = urls.map(url => `partPackage: ${url}`).join('\n')
-    const appendContent = `${lines}\npartMiniVersion: 1.7.0\nreleaseNotes:\n  - 升级日志\n  - https://download.fastgit.org/docmirror/dev-sidecar/releases/download/v${version}/DevSidecar-${version}.exe\n`
+    const appendContent = `${lines}\npartMiniVersion: 1.7.0\nreleaseNotes:\n  - 升级日志\n`
 
     fs.appendFile(latestFilePath, appendContent, (err) => {
       if (err) {
