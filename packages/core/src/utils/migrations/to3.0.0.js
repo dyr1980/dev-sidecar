@@ -35,29 +35,40 @@ function caPemPaths () {
 }
 
 /**
- * v3.0.0 step 1: CA 私钥 pem → SecretStore，删除明文
+ * v3.0.0 step 1: CA 私钥存进 SecretStore，删除磁盘明文；证书一并备份
+ *
+ * 删除是安全的：启动代理前 `util.ca-store.prepareCa()` 会从密钥库取出私钥，
+ * 通过环境变量 `DS_CA_KEY_PEM` 交给子进程，`initCA()` 不会再把它当成首次运行。
  */
 async function migrateTo300_caPrivateKey () {
   const step = `${MIGRATION_ID}:ca-key`
-  if (await secretStore.hasSecret(ACCOUNT_CA_PEM)) {
-    for (const p of caPemPaths()) {
-      try {
-        fs.unlinkSync(p)
-      } catch { /* already gone */ }
-    }
-    return { step, action: 'already' }
-  }
+  const certPath = path.join(userBase(), 'dev-sidecar.ca.crt')
+  let action = 'none'
+
   for (const p of caPemPaths()) {
     try {
       const pem = fs.readFileSync(p, 'utf8')
-      if (pem && /PRIVATE/i.test(pem)) {
-        await secretStore.setSecret(ACCOUNT_CA_PEM, pem)
-        fs.unlinkSync(p)
-        return { step, action: 'migrated', from: p }
+      if (!pem || !/PRIVATE/i.test(pem)) {
+        continue
       }
-    } catch { /* try next */ }
+      await secretStore.setSecret(ACCOUNT_CA_PEM, pem)
+      action = 'stored'
+      try {
+        fs.unlinkSync(p)
+      } catch { /* 删除失败不影响使用：prepareCa 会改用密钥库副本 */ }
+    } catch { /* 文件不存在，跳过 */ }
   }
-  return { step, action: 'none' }
+
+  try {
+    if (fs.existsSync(certPath)) {
+      const certPem = fs.readFileSync(certPath, 'utf8')
+      if (certPem && certPem.includes('BEGIN CERTIFICATE')) {
+        await secretStore.setSecret('system-ca-cert', certPem)
+      }
+    }
+  } catch { /* 证书读取失败不影响私钥备份 */ }
+
+  return { step, action }
 }
 
 /**
