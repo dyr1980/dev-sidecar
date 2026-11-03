@@ -8,7 +8,7 @@ const localArch = process.arch === 'ia32' ? 'ia32' : process.arch === 'arm64' ? 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: 'dev-sidecar',
-  electronVersion: '42.11.16', // 恢复原作者版本，保证底层 API 和功能完全一致
+  electronVersion: '42.11.18', // 与 devDependency 实际解析到的版本一致（^42.11.16 → 42.11.18）；hoisted 布局下 builder 无法从 node_modules 推断版本，故显式钉住
   productName: 'dev-sidecar',
   artifactName: 'DevSidecar-${version}-${arch}.${ext}',
   copyright: 'Copyright © 2020-' + new Date().getFullYear() + ' Greper, WangLiang, CuteOmega; Modified by dyr1980',
@@ -55,6 +55,9 @@ module.exports = {
       to: 'extra',
     },
   ],
+  // 按目标架构裁剪 koffi / @starknt 的非目标平台二进制（files 规则不支持 ${arch} 宏，
+  // 只能在 beforePack 里往 platformSpecificBuildOptions.files 追加排除项）
+  beforePack: './pkg/before-pack.cjs',
   afterPack: './pkg/after-pack.cjs',
   afterAllArtifactBuild: './pkg/after-all-artifact-build.cjs',
   nsis: {
@@ -86,7 +89,7 @@ module.exports = {
           { target: 'AppImage', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'tar.gz', arch: ['x64', 'arm64', 'armv7l'] },
           { target: 'rpm', arch: ['x64', 'arm64', 'armv7l'] },
-          // { target: 'flatpak', arch: ['x64'] }, // 与 workflow 对齐：不产 flatpak（workflow 的 flatpak 上传步骤已注释/为死代码）
+          { target: 'flatpak', arch: ['x64'] },
         ]
       : [
           { target: 'deb', arch: [localArch] },

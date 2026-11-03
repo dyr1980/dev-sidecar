@@ -5,6 +5,11 @@ const jsonApi = require('@blue-frontier/mitmproxy/src/json')
 const mergeApi = require('../merge')
 const logOrConsole = require('../utils/util.log-or-console')
 
+// Xget 的 CF Access 服务令牌占位符：真实值由代理子进程从环境变量读取，避免密钥写进 running.json
+//（与 modules/plugin/xget 的 CF_ACCESS_SECRET_ENV 对应）
+// eslint-disable-next-line no-template-curly-in-string
+const CF_ACCESS_SECRET_PLACEHOLDER = '${env:DS_XGET_CF_ACCESS_SECRET}'
+
 function getUserBasePath (autoCreate = true) {
   const userHome = process.env.USERPROFILE || process.env.HOME || '/'
   const dir = path.resolve(userHome, './.dev-sidecar')
@@ -178,11 +183,48 @@ function getAutomaticCompatibleConfigPath () {
   return path.join(dir, '/automaticCompatibleConfig.json')
 }
 
+function normalizeToken (value) {
+  return value == null ? '' : String(value).trim()
+}
+
+/**
+ * 给 Xget 覆盖层里的每条路径规则附加 Cloudflare Access 服务令牌请求头。
+ * 结构：server.intercepts[hostname][pathRegex] = { proxy, requestReplace?, ... }
+ */
+function applyCfAccessHeaders (overlay, clientId, clientSecret) {
+  const intercepts = overlay && overlay.server && overlay.server.intercepts
+  if (intercepts == null) {
+    return
+  }
+  for (const hostname of Object.keys(intercepts)) {
+    const pathRules = intercepts[hostname]
+    if (pathRules == null || typeof pathRules !== 'object' || Array.isArray(pathRules)) {
+      continue
+    }
+    for (const pathRegex of Object.keys(pathRules)) {
+      const rule = pathRules[pathRegex]
+      if (rule == null || typeof rule !== 'object' || Array.isArray(rule)) {
+        continue
+      }
+      const requestReplace = rule.requestReplace || {}
+      rule.requestReplace = {
+        ...requestReplace,
+        headers: {
+          ...(requestReplace.headers || {}),
+          'cf-access-client-id': clientId,
+          'cf-access-client-secret': clientSecret,
+        },
+      }
+    }
+  }
+}
+
 /**
  * 生成 Xget 加速规则覆盖层。
  *
  * 用户启用 xget 插件并填写实例地址后，把样例配置里的 ${XGET_DOMAIN} 替换为该地址，
  * 按「用户本地配置」的优先级参与合并（在用户配置之前合并，用户配置仍可覆盖同名规则）。
+ * 填写了 Cloudflare Access 服务令牌（可选）时，为覆盖层里的每条规则附加对应请求头。
  */
 function getXgetOverlay (userConfig) {
   const xget = userConfig && userConfig.plugin && userConfig.plugin.xget
@@ -214,15 +256,25 @@ function getXgetOverlay (userConfig) {
   const baseUrl = `${parsed.protocol}//${parsed.host}${pathSuffix}`
 
   const samplePath = path.join(__dirname, '..', 'modules', 'plugin', 'xget', 'xget_config.json5')
+  let overlay
   try {
     const content = fs.readFileSync(samplePath, 'utf8')
       .replaceAll('https://${XGET_DOMAIN}', baseUrl)
       .replaceAll('${XGET_DOMAIN}', parsed.host)
-    return jsonApi.parse(content)
+    overlay = jsonApi.parse(content)
   } catch (e) {
     logOrConsole.warn('加载 Xget 配置失败:', e.message)
     return null
   }
+
+  // 可选：Cloudflare Access 服务令牌。Secret 不落盘——规则里只写占位符，
+  // 真实值由代理子进程从环境变量（DS_XGET_CF_ACCESS_SECRET）读取并替换；
+  // 未保存令牌时占位符解析为空，requestReplace 会直接跳过这个请求头。
+  const cfAccessClientId = normalizeToken(xget.setting.cfAccessClientId)
+  if (cfAccessClientId) {
+    applyCfAccessHeaders(overlay, cfAccessClientId, CF_ACCESS_SECRET_PLACEHOLDER)
+  }
+  return overlay
 }
 
 /**
@@ -275,6 +327,8 @@ module.exports = {
   saveRemoteConfigVersion,
 
   getAutomaticCompatibleConfigPath,
+
+  getXgetOverlay,
 
   getConfigFromFiles,
 }

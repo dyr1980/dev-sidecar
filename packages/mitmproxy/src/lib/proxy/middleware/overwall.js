@@ -6,7 +6,9 @@ const request = require('request')
 const log = require('../../../utils/util.log.server')
 const matchUtil = require('../../../utils/util.match')
 const pac = require('./source/pac')
+const { restoreVerifySslAgent } = require('../../interceptor/impl/req/interceptorUtil')
 const dateUtil = require('@blue-frontier/dev-sidecar/src/utils/util.date')
+const { resolvedSnapshot } = require('@blue-frontier/dev-sidecar/src/utils/util.secret-vault')
 
 let pacClient = null
 
@@ -129,6 +131,9 @@ function buildServerList (overWallConfig) {
   const list = []
   const customServer = overWallConfig.server || {}
   const defaultServer = overWallConfig.serverDefault || {}
+  // 口令优先取系统密钥库快照（fork 时以环境变量注入），配置里只留空串
+  const storedPasswords = resolvedSnapshot().overwall || {}
+  const passwordOf = (domain, cfg) => storedPasswords[domain] || (cfg && cfg.password)
 
   // 内置默认服务器 ID 固定为 0；用户自定义服务器在此基础上依次增加
   let nextId = 1
@@ -139,7 +144,7 @@ function buildServerList (overWallConfig) {
         domain,
         port: cfg && cfg.port,
         path: cfg && cfg.path,
-        password: cfg && cfg.password,
+        password: passwordOf(domain, cfg),
       })
     }
   }
@@ -150,7 +155,7 @@ function buildServerList (overWallConfig) {
       domain,
       port: cfg && cfg.port,
       path: cfg && cfg.path,
-      password: cfg && cfg.password,
+      password: passwordOf(domain, cfg),
     }
     if (item.id >= nextId) {
       nextId = item.id + 1
@@ -240,6 +245,15 @@ function createOverwallMiddleware (overWallConfig) {
       } else {
         rOptions.port = port || (rOptions.protocol === 'https:' ? 443 : 80)
       }
+
+      // 目标是 overwall 服务器：不能沿用原域名的 SNI 伪装与证书校验域名，
+      // 否则 sni 拦截器先写下的 servername 会被带到 overwall 服务器的 TLS 握手上。
+      // （sni 拦截器改为只改 rOptions 后，overwall 才会在它之后执行到）
+      delete rOptions.servername
+      delete rOptions.verifyHost
+      // 同理，原域名规则里的 unVerifySsl 也不应作用到新目标上
+      restoreVerifySslAgent(rOptions)
+
       log.info('OverWall:', rOptions.hostname, '➜', proxyTarget, `, serverId: ${serverId}`)
 
       res.setHeader('DS-Overwall', `${target.source}:${serverId}`)

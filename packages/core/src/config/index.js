@@ -170,7 +170,7 @@ const defaultConfig = {
 // >>> SYNC:OFFICIAL-FALLBACK:BEGIN
 // 「internal 底本」：官方配置的规则类节点，由 _script/sync-official-config.mjs 在构建时自动更新，请勿手改。
 // 来源地址：https://ds-official-config.bestar.de5.net/remote_config.json5
-// 来源版本：202610122340（修复部分规则匹配过宽的问题）
+// 来源版本：202611021413（新增 Grok（grok.com / x.ai）的 ECH 规则；grok.ai 不兼容 ECH，保持普通连接）
 // 下载失败时脚本不会改动本区块，即保留上一次的同步结果。
 // 用 Object.assign 整体替换（不是深合并），这样官方「删掉」的键也会跟着消失。
 /* eslint-disable no-template-curly-in-string -- 官方配置里存在 ${...} 形式的普通字符串（如代理目标），并非模板串 */
@@ -242,7 +242,6 @@ Object.assign(defaultConfig, {
         '*.nodejs.org': true,
         '*.npmjs.com': true,
         '*.wikimedia.org': true,
-        '*.v2ex.com': true,
         '*.azureedge.net': true,
         '*.cloudfront.net': true,
         '*.bing.com': true,
@@ -767,6 +766,7 @@ Object.assign(defaultConfig.server, {
       },
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.github.io': {
@@ -774,14 +774,21 @@ Object.assign(defaultConfig.server, {
         sni: 'baidu.com',
       },
     },
+    'gist.github.com': {
+      '.*': {
+        sni: 'baidu.com',
+      },
+    },
     '*.gravatar.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.windows.net': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '(userlocations|locationhistory-pa|locationhistoryaggregates-pa|locationhistoryplacedetails-pa).googleapis.com': {
@@ -792,6 +799,7 @@ Object.assign(defaultConfig.server, {
     '*.googleapis.com': {
       '.*': {
         sni: 'www.google.cn',
+        unVerifySsl: true,
       },
     },
     'fonts.googleapis.com': {
@@ -814,29 +822,51 @@ Object.assign(defaultConfig.server, {
     '^(?!.*(translate-pa).google(?:apis|usercontent)?.com).*google(?:apis|usercontent)?.com$': {
       '.*': {
         sni: 'www.google.cn',
+        unVerifySsl: true,
         desc: '部分需要走其它代理的服务',
       },
     },
-    '^.*(youtube.com|gstatic.com|youtube.nocookie.com|youtu.be|ggpht.com|i.ytimg.com|blogger.com|doodles.google|about.google|android.com)$': {
+    '^.*(youtube.com|gstatic.com|youtube.nocookie.com|youtu.be|ggpht.com|i.ytimg.com|blogger.com|doodles.google|about.google|android.com|antigravity.google)$': {
       '.*': {
         sni: 'www.google.cn',
+        unVerifySsl: true,
       },
     },
     '^.*\\.google\\.com(\\.\\w+)?$': {
       '.*': {
         sni: 'www.google.cn',
+        unVerifySsl: true,
       },
     },
     '^(?<pre>.*).googlevideo.com$': {
       '.*': {
         proxy: '\${pre}.xn--ngstr-lra8j.com',
         sni: 'g.cn',
+        unVerifySsl: true,
         options: true,
       },
     },
     'www.gstatic.com': {
       '/recaptcha/.*': {
         proxy: 'www.recaptcha.net',
+      },
+    },
+    'docker.io': {
+      '.*': {
+        sni: 'baidu.com',
+        unVerifySsl: true,
+      },
+    },
+    '^(registry-1|index)\\.docker\\.io$': {
+      '.*': {
+        sni: 'baidu.com',
+        unVerifySsl: true,
+      },
+    },
+    '^(cloud|go|goto|id)\\.docker\\.com$': {
+      '.*': {
+        sni: 'goto.docker.com',
+        unVerifySsl: true,
       },
     },
     'ms-sso.copilot.microsoft.com': {
@@ -848,16 +878,19 @@ Object.assign(defaultConfig.server, {
     '*.pixiv.org': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.pximg.net': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.nikke-global.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'i.pximg.net': {
@@ -874,26 +907,31 @@ Object.assign(defaultConfig.server, {
     '*.youtube.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.youtu.be': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.youtube-nocookie.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*.ggpht.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'i.ytimg.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'cdn.jsdelivr.net': {
@@ -913,6 +951,7 @@ Object.assign(defaultConfig.server, {
     'update.greasyfork.org': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'cn.vuejs.org': {
@@ -923,31 +962,37 @@ Object.assign(defaultConfig.server, {
     '*z-library.sk': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*z-lib.help': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '^.*(wikipedia|wikimedia|wikinews|wiktionary|wikiversity|wikidata|wikiquote|wikivoyage|wikifunctions|wikibooks).org$': {
       '.*': {
         sni: 'mediawiki.org',
+        unVerifySsl: true,
       },
     },
     '*w.wiki': {
       '.*': {
         sni: 'mediawiki.org',
+        unVerifySsl: true,
       },
     },
     '*reddit.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*redditstatic.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'redd.it': {
@@ -958,22 +1003,26 @@ Object.assign(defaultConfig.server, {
     '*redd.it': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*redditmedia.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*steamcommunity.com': {
       '^(?!/discussions|/Profile|/app.*/discussions).*$': {
         sni: 'baidu.com',
+        unVerifySsl: true,
         desc: '讨论区锁区,考虑不拦截丢给彩蛋',
       },
     },
     '^(?!.*cloudflare).*steamstatic.com$': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
         desc: 'steam社区数据不能也不需调整sni,直接直连',
       },
     },
@@ -985,36 +1034,54 @@ Object.assign(defaultConfig.server, {
     'external-content.duckduckgo.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*duckduckgo.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
+      },
+    },
+    '*onedrive.live.com': {
+      '.*': {
+        sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*dropbox.com': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*f-droid.org': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'fdroid.org': {
       '.*': {
         sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     '*apkmirror.com': {
       '.*': {
         sni: 'none',
+        unVerifySsl: true,
       },
     },
     '*.claude.ai': {
       '.*': {
         sni: 'claude.ai',
+      },
+    },
+    '*archive.org': {
+      '.*': {
+        sni: 'baidu.com',
+        unVerifySsl: true,
       },
     },
     'jsd.proxy.aks.moe': {
@@ -1085,21 +1152,25 @@ Object.assign(defaultConfig.server, {
     '*.instagram.com': {
       '.*': {
         sni: 'g.cn',
+        unVerifySsl: true,
       },
     },
     '*.cdninstagram.com': {
       '.*': {
         sni: 'g.cn',
+        unVerifySsl: true,
       },
     },
     '*.intercom.io': {
       '.*': {
         sni: 'g.cn',
+        unVerifySsl: true,
       },
     },
     '*startpage.com': {
       '.*': {
         sni: 'www.baidu.com',
+        unVerifySsl: true,
       },
     },
   },
@@ -1108,23 +1179,11 @@ Object.assign(defaultConfig.server, {
       '20.200.245.247': true,
       '20.27.177.113': true,
       '20.205.243.166': true,
-      '20.26.156.215': false,
-      '20.87.245.0': false,
-      '4.237.22.38': false,
-      '20.201.28.151': false,
-      '140.82.113.3': false,
-      '140.82.114.4': false,
-      '140.82.116.3': false,
-      '140.82.116.4': false,
-      '140.82.121.3': false,
-      '140.82.121.4': false,
     },
     'gist.github.com': {
+      '20.205.243.166': true,
+      '140.82.121.3': true,
       '20.27.177.113': true,
-      '20.200.245.247': true,
-      '20.205.243.166': false,
-      '140.82.116.3': true,
-      '140.82.116.4': true,
       '4.237.22.38': true,
     },
     'github.dev': {
@@ -1386,6 +1445,12 @@ Object.assign(defaultConfig.server, {
     '*.claude.ai': {
       '2a01:4f8:c2c:123f:64:5:a04f:680a': true,
     },
+    'web-static.archive.org': {
+      '207.241.237.2': true,
+    },
+    '*archive.org': {
+      '207.241.237.3': true,
+    },
     'cdn.jsdelivr.net': {
       '104.16.89.20': true,
     },
@@ -1421,7 +1486,7 @@ Object.assign(defaultConfig.server, {
       },
       'cf-DoH': {
         server: 'https://cloudflare-dns.com/dns-query',
-        sni: 'baidu.com',
+        sni: 'cf',
       },
       'quad9-ip': {
         server: 'https://9.9.9.9/dns-query',
@@ -1434,6 +1499,7 @@ Object.assign(defaultConfig.server, {
       },
     },
     mapping: {
+      '*docker*': 'cf-DoH',
       '*.xn--ngstr-lra8j.com': 'bebasid',
       '*.googlevideo.com': 'bebasid',
       '*.gvt1.com': 'bebasid',
@@ -1449,7 +1515,6 @@ Object.assign(defaultConfig.server, {
       'img.shields.io': 'cf-DoT',
       '*.vuepress.vuejs.org': 'cf-DoT',
       '*.gh.docmirror.top': 'cf-DoT',
-      '*.v2ex.com': 'cf-DoT',
       '*.pypi.org': 'cf-DoT',
       '*.pixiv.org': 'cf-DoT',
       '*.pximg.net': 'cf-DoT',
@@ -1459,6 +1524,7 @@ Object.assign(defaultConfig.server, {
       '*.vsassets.io': 'cf-DoT',
     },
     familyMapping: {
+      '*docker*': '4',
       '*.xn--ngstr-lra8j.com': '6',
       '*.googlevideo.com': '6',
       '*.gvt1.com': '6',
@@ -1468,7 +1534,6 @@ Object.assign(defaultConfig.server, {
       '*.github.com': '4',
       '*github*.com': '4',
       '*.github.io': '4',
-      '*.docker.com': '4',
       '*.electronjs.org': '4',
       '*.amazonaws.com': '4',
       '*.yarnpkg.com': '4',
@@ -1477,7 +1542,6 @@ Object.assign(defaultConfig.server, {
       'img.shields.io': '4',
       '*.vuepress.vuejs.org': '4',
       '*.gh.docmirror.top': '4',
-      '*.v2ex.com': '4',
       '*.pypi.org': '4',
       '*.pixiv.org': '4',
       '*.pximg.net': '4',
@@ -1507,22 +1571,34 @@ Object.assign(defaultConfig.server, {
         '*twitter.com',
         '*twimg.com',
         '*sci-hub.pub',
-        '^(.+.)?x.com$',
-        '*docker.com',
+        '^(.+\\.)?x\\.com$',
+        '*matrix.org',
+        '*mod.io',
+        '*itch.io',
+        '*patreon.com',
+        '*substack.com',
+        '*medium.com',
+        '*v2ex.com',
+        'auth.docker.io',
+        'hub.docker.com',
         '*pixiv.net',
+        '*openai.com',
         '*chatgpt.com',
         '*civitai.com',
+        '*civitai.red',
         '*ldstatic.com',
         'civitai.com',
         '*linux.do',
         'greasyfork.org',
+        '*grok.com',
+        '*x.ai',
       ],
       preSetIpDomains: [
         '*ldstatic.com',
         '*t.co',
         '*twitter.com',
         '*twimg.com',
-        '^(.+.)?x.com$',
+        '^(.+\\.)?x\\.com$',
       ],
       dns: 'cf-DoH',
       enabled: true,
@@ -1540,14 +1616,15 @@ Object.assign(defaultConfig.server, {
       prefix: '',
       domains: [
         '*chatgpt.com',
+        '*openai.com',
       ],
       dns: 'cf-DoH',
     },
   },
 })
 Object.assign(defaultConfig.app.metaInfo, {
-  version: 202610122340,
-  updateLog: '修复部分规则匹配过宽的问题',
+  version: 202611021413,
+  updateLog: '新增 Grok（grok.com / x.ai）的 ECH 规则；grok.ai 不兼容 ECH，保持普通连接',
 })
 /* eslint-enable no-template-curly-in-string */
 // <<< SYNC:OFFICIAL-FALLBACK:END

@@ -7,6 +7,11 @@ const event = require('../../event')
 const status = require('../../status')
 const jsonApi = require('@blue-frontier/mitmproxy/src/json')
 const log = require('../../utils/util.log.core')
+const secretVaultModule = require('../../utils/util.secret-vault')
+// 兼容增量更新：安装目录里可能残留只导出实例的旧版 util.secret-vault.js
+const secretVault = secretVaultModule.vault || secretVaultModule
+const { prepareCa, CA_KEY_ENV } = require('../../utils/util.ca-store')
+const { writeFilePrivate } = require('../../utils/util.fs-private')
 const { buildRemoteConfigFetchRules } = require('../../config/remote-config-rule')
 
 let server = null
@@ -97,6 +102,49 @@ const serverApi = {
       return { port: server.port }
     }
 
+    // 插件可以把敏感数据（如系统密钥库里的令牌）以环境变量形式交给子进程，避免写进 running.json。
+    // 必须在读取配置之前执行：迁移会把旧版明文口令/令牌从配置里挪走。
+    if (typeof secretVault.migrate === 'function') {
+      try {
+        if (await secretVault.migrate(config)) {
+          log.info('已把旧版明文口令/令牌迁入系统密钥库')
+        }
+      } catch (e) {
+        log.warn('迁移旧版明文口令/令牌失败，本次跳过:', e)
+      }
+    } else {
+      log.warn('util.secret-vault 缺少 migrate（安装包文件不完整），跳过配置迁移')
+    }
+    // CA 私钥只留在系统密钥库里：文件被删过就从密钥库取，并通过环境变量交给子进程，
+    // 否则 initCA 会把它当成首次运行、静默换发新 CA
+    const rootCaFile = config.get().server.setting.rootCaFile
+    const caPrep = await prepareCa({ certPath: rootCaFile.certPath, keyPath: rootCaFile.keyPath })
+    const pluginEnv = {}
+    for (const key in plugins) {
+      const plugin = plugins[key]
+      if (!plugin || typeof plugin.prepareEnv !== 'function') {
+        continue
+      }
+      try {
+        Object.assign(pluginEnv, (await plugin.prepareEnv()) || {})
+      } catch (e) {
+        log.warn(`插件【${key}】准备子进程环境变量失败:`, e)
+      }
+    }
+    // 内建凭据（增强功能口令、P2P 令牌）走同一份快照
+    if (typeof secretVault.prepareEnv === 'function') {
+      try {
+        Object.assign(pluginEnv, (await secretVault.prepareEnv()) || {})
+      } catch (e) {
+        log.warn('读取系统密钥库失败，本次不注入口令/令牌快照:', e)
+      }
+    } else {
+      log.warn('util.secret-vault 缺少 prepareEnv（安装包文件不完整），跳过环境变量注入')
+    }
+    if (caPrep.keyPem) {
+      pluginEnv[CA_KEY_ENV] = caPrep.keyPem
+    }
+
     const allConfig = config.get()
     const serverConfig = lodash.cloneDeep(allConfig.server)
 
@@ -138,6 +186,10 @@ const serverApi = {
       }
     }
     serverConfig.plugin = lodash.cloneDeep(allConfig.plugin || {})
+    // 安全：旧版写在配置里的明文 CF Access 令牌不进入 running.json（反馈打包会带上该文件）
+    if (serverConfig.plugin.xget && serverConfig.plugin.xget.setting) {
+      delete serverConfig.plugin.xget.setting.cfAccessClientSecret
+    }
     if (setting && setting.overwall !== true && serverConfig.plugin.overwall) {
       // setting.json 未开启 overwall 时，增强功能插件不生效
       serverConfig.plugin.overwall.enabled = false
@@ -165,13 +217,13 @@ const serverApi = {
         }
         serverConfig.app.instance = existingInstance
       }
-      fs.writeFileSync(runningConfigPath, jsonApi.stringify(serverConfig))
+      writeFilePrivate(runningConfigPath, jsonApi.stringify(serverConfig))
       log.info('保存 running.json 运行时配置文件成功:', runningConfigPath)
     } catch (e) {
       log.error('保存 running.json 运行时配置文件失败:', runningConfigPath, ', error:', e)
       throw e
     }
-    const serverProcess = fork(mitmproxyPath, [runningConfigPath])
+    const serverProcess = fork(mitmproxyPath, [runningConfigPath], Object.keys(pluginEnv).length > 0 ? { env: { ...process.env, ...pluginEnv } } : undefined)
     server = {
       id: serverProcess.pid,
       process: serverProcess,
